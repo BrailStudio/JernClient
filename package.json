@@ -1,3 +1,4 @@
+
 {
   "name": "jern-client",
   "productName": "Jern Client",
@@ -22,17 +23,30 @@
   "build": {
     "appId": "dev.jern.client",
     "productName": "Jern Client",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "renderer/**", "build/icon.ico"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "build/icon.ico"
+    ],
     "artifactName": "Jern-Client-Setup-${version}.${ext}",
-    "win": { "target": ["nsis", "msi"] },
+    "win": {
+      "target": [
+        "nsis",
+        "msi"
+      ]
+    },
     "nsis": {
-    "oneClick": false,
-    "perMachine": false,
-    "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": true,
-    "createStartMenuShortcut": true
-  }
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
     "msi": {
       "oneClick": false,
       "perMachine": true,
