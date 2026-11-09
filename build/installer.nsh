@@ -1,4 +1,6 @@
-; Adds a "Create a desktop shortcut" checkbox on the installer's final page.
+
+; JernClient custom NSIS installer
+
 !macro customHeader
   !define MUI_FINISHPAGE_SHOWREADME ""
   !define MUI_FINISHPAGE_SHOWREADME_TEXT "Create a desktop shortcut"
@@ -6,7 +8,7 @@
 !macroend
 
 Function JernDesktopShortcut
-  CreateShortCut "$DESKTOP\${PRODUCT_FILENAME}.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+  CreateShortCut "$DESKTOP\${PRODUCT_FILENAME}.lnk" "$appExe"
 FunctionEnd
 
 !macro customUnInstall
