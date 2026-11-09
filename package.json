@@ -27,13 +27,12 @@
     "artifactName": "Jern-Client-Setup-${version}.${ext}",
     "win": { "target": ["nsis", "msi"] },
     "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": false,
-      "createStartMenuShortcut": true,
-      "include": "build/installer.nsh"
-    },
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
     "msi": {
       "oneClick": false,
       "perMachine": true,
