@@ -1,0 +1,44 @@
+{
+  "name": "jern-client",
+  "productName": "Jern Client",
+  "version": "1.0.0",
+  "description": "Performance-focused Minecraft launcher",
+  "main": "main.js",
+  "author": "Jern",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis msi"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.jern.client",
+    "productName": "Jern Client",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "renderer/**", "build/icon.ico"],
+    "artifactName": "Jern-Client-Setup-${version}.${ext}",
+    "win": { "target": ["nsis", "msi"] },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh"
+    },
+    "msi": {
+      "oneClick": false,
+      "perMachine": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

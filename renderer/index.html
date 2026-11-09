@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Jern Client</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<style>
+:root{--bg:#181b21;--rail:#12141a;--surf:#21252e;--surf2:#2a2f3a;--line:#333a47;--blue:#2b6de0;--blue2:#4a85ee;--text:#f2f4f8;--mute:#8b93a4;--bad:#ef6a5b;--ok:#3ec98a;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--blue2);outline-offset:2px}
+::-webkit-scrollbar{width:10px}::-webkit-scrollbar-thumb{background:#363c4a;border-radius:8px;border:2px solid var(--bg)}::-webkit-scrollbar-thumb:hover{background:#464e60}
+.ic{display:inline-grid;place-items:center;flex:none}.ic svg{width:1.15em;height:1.15em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* top bar + rail */
+#topbar{height:40px;flex:none;background:var(--rail);display:flex;align-items:center;gap:4px;padding:0 150px 0 12px;-webkit-app-region:drag}
+#topbar>*{-webkit-app-region:no-drag}
+.tbt{margin-left:10px;color:var(--mute);font-size:13px;font-weight:600;-webkit-app-region:drag}
+.tbb{width:32px;height:30px;border:0;background:none;border-radius:8px;color:var(--text);display:grid;place-items:center}
+.tbb:hover:not(:disabled){background:var(--surf2)}.tbb:disabled{color:#555b69;cursor:default}
+.tbb svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+#main{flex:1;display:flex;min-height:0}
+#rail{width:76px;background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:6px}
+.logo{width:46px;height:46px;border-radius:12px;margin-bottom:14px;cursor:pointer}
+.nav{width:52px;height:52px;border:0;background:none;border-radius:14px;color:var(--mute);display:grid;place-items:center;position:relative}
+.nav:hover{background:var(--surf);color:var(--text)}.nav.on{background:var(--surf);color:var(--blue2)}
+.nav.on::before{content:"";position:absolute;left:-12px;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;background:var(--blue2)}
+.nav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#me{margin-top:auto;border:0;background:none;padding:0;border-radius:12px}
+#page{flex:1;overflow:auto;padding:26px 34px 40px}
+#page.fade>*{animation:in .22s ease both}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* controls */
+.top{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.top h1{font-size:26px;margin:0;font-weight:700;flex:1;white-space:nowrap}
+.btn{border:0;background:var(--surf2);border-radius:10px;padding:9px 16px;font-weight:600;display:inline-flex;align-items:center;gap:8px;justify-content:center}
+.btn:hover:not(:disabled){background:#363c4b}.btn.pri{background:var(--blue)}.btn.pri:hover:not(:disabled){background:var(--blue2)}
+.btn.bad{color:var(--bad)}.btn:disabled{opacity:.55;cursor:default}.btn.big{padding:13px 30px;font-size:16px;border-radius:12px}
+.ibtn{width:42px;height:42px;border:0;background:#0003;border-radius:11px;display:grid;place-items:center;color:var(--text)}
+.ibtn:hover{background:#0006}.ibtn.bad:hover{color:var(--bad)}
+input,select{background:var(--surf);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit}
+input[type=text],input[type=password],input:not([type]){width:100%}
+select{cursor:pointer}input:focus,select:focus{border-color:var(--blue2);outline:none}
+label.f{display:block;color:var(--mute);margin:14px 0 5px;font-size:13px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sbox{display:flex;align-items:center;gap:10px;background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:0 14px;color:var(--mute)}
+.sbox:focus-within{border-color:var(--blue2);color:var(--text)}
+.sbox input{background:none;border:0;padding:12px 0;outline:none;flex:1;min-width:0}.sbox.sm input{padding:9px 0;width:180px}
+.tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.tab{border:0;background:none;padding:8px 14px;border-radius:10px;color:var(--mute);font-weight:600}
+.tab:hover{background:var(--surf)}.tab.on{background:var(--surf);color:var(--text);box-shadow:inset 0 -2px var(--blue2)}
+.sub{color:var(--mute);font-size:13px;display:block}.dim{opacity:.75}
+.msg{color:var(--mute);margin:0 0 14px}.msg.e{color:var(--bad)}
+.list{display:grid;gap:10px}
+.crumb{background:none;border:0;color:var(--mute);padding:0;font-weight:600}.crumb:hover{color:var(--text)}.crumbs{color:var(--mute);margin-bottom:14px}
+.empty{text-align:center;padding:50px 20px;color:var(--mute);background:var(--surf);border-radius:16px}.empty b{display:block;color:var(--text);font-size:16px;margin-bottom:4px}
+/* switch */
+.tgl{width:40px;height:22px;border-radius:12px;border:0;background:#3b4252;position:relative;flex:none;padding:0}
+.tgl i{position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+.tgl.on{background:var(--blue)}.tgl.on i{transform:translateX(18px)}
+/* instances */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}
+.card{background:var(--surf);border-radius:16px;overflow:hidden;cursor:pointer;position:relative;transition:transform .14s,box-shadow .14s;border:0;text-align:left;color:inherit}
+.card:hover{transform:translateY(-4px);box-shadow:0 12px 30px #0006}
+.cover{position:relative;overflow:hidden}.cover .cv{position:absolute;right:-6px;bottom:-14px;font-size:64px;font-weight:800;color:#ffffff22;letter-spacing:-2px}
+.badges{position:absolute;left:10px;top:10px;display:flex;gap:6px}
+.bdg{display:inline-flex;align-items:center;gap:4px;background:#0007;backdrop-filter:blur(6px);padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.bdg.boost{background:var(--blue)}
+.card .in{padding:12px 14px 14px}.card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.card .play{position:absolute;right:12px;top:84px;width:46px;height:46px;border-radius:50%;border:0;background:var(--blue);display:grid;place-items:center;opacity:0;transform:translateY(6px);transition:.14s;box-shadow:0 6px 18px #0007;font-size:18px}
+.card:hover .play,.card .play:focus-visible{opacity:1;transform:none}
+.card.add{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;min-height:200px;border:2px dashed var(--line);background:none;color:var(--mute);font-size:15px}
+.card.add:hover{border-color:var(--blue2);color:var(--text);box-shadow:none;transform:none}.card.add .ic svg{width:26px;height:26px}
+/* home */
+.homehero{display:flex;gap:22px;align-items:center;padding:28px;border-radius:20px;margin-bottom:26px;background:linear-gradient(120deg,color-mix(in srgb,var(--blue) 75%,#000),#1a2540 80%)}
+.homehero .hl{width:76px;height:76px;border-radius:18px}.homehero h1{margin:0 0 4px;font-size:26px}.homehero p{margin:0;opacity:.8}
+h2.sec{font-size:17px;margin:0 0 12px;font-weight:700}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-bottom:28px}
+.tile{background:var(--surf);border:0;border-radius:16px;padding:18px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.tile:hover{background:var(--surf2)}.tile .ic{color:var(--blue2)}.tile .ic svg{width:26px;height:26px}.tile b{font-size:15px}
+.note{background:var(--surf);border-radius:16px;padding:16px 18px;margin-bottom:26px;display:flex;gap:14px;align-items:center}
+.note.warn{box-shadow:inset 0 0 0 1px #ef6a5b66}
+/* instance detail */
+.dhead{border-radius:20px;padding:22px;margin-bottom:18px}
+.dtop{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.dhead .big{width:84px;height:84px;border-radius:20px;background:#0003;display:grid;place-items:center;font-size:36px;font-weight:800}
+.dhead h1{margin:0 0 8px;font-size:26px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{display:inline-flex;align-items:center;gap:5px;background:#0004;padding:3px 11px;border-radius:20px;font-size:12.5px;font-weight:600}
+.lp{margin-top:16px;display:flex;gap:14px;align-items:center}.lp span{font-size:13px;min-width:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:6px;background:#0005;border-radius:4px;flex:1;overflow:hidden}.bar i{display:block;height:100%;width:0;background:#fff;border-radius:4px;transition:width .2s}
+.crow{display:flex;gap:14px;align-items:center;background:var(--surf);border-radius:12px;padding:11px 14px}
+.crow.off .t{opacity:.5}.crow .t{flex:1;min-width:0}.crow b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.crow small{color:var(--mute)}
+.scard{background:var(--surf);border-radius:16px;padding:20px 22px;margin-bottom:16px;max-width:760px}.scard h3{margin:0 0 4px;font-size:16px}
+.swatches{display:flex;gap:10px;margin-top:6px}.sw{width:34px;height:34px;border-radius:50%;border:3px solid transparent;padding:0}.sw.on{border-color:#fff}
+.item{display:flex;gap:14px;align-items:center;background:var(--surf2);border-radius:12px;padding:10px 14px}.item .t{flex:1}
+pre{background:#101217;border-radius:14px;padding:14px;height:340px;overflow:auto;font:12px/1.5 Consolas,monospace;color:#b9c2d0;white-space:pre-wrap;margin:0}
+/* browse (Modrinth style) */
+.hit{display:grid;grid-template-columns:92px 1fr auto;gap:18px;background:var(--surf);border-radius:16px;padding:16px;align-items:center;transition:background .12s}
+.hit:hover{background:#262b36}.hit>img{width:92px;height:92px;border-radius:14px;object-fit:cover;background:var(--surf2)}
+.ht{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.hn{font-size:18px;font-weight:700;color:var(--text);text-decoration:none}.hn:hover{color:var(--blue2);text-decoration:underline}.by{color:var(--mute)}
+.hd{margin:4px 0 10px;color:#c0c6d2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{background:var(--surf2);border:1px solid var(--line);border-radius:20px;padding:1px 11px;font-size:12.5px;text-transform:capitalize}
+.tag.loader{color:#f0b07a;border-color:#f0b07a55}.tag.env{color:#9fb3c8}
+.hs{display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:150px}.hs .r{display:flex;gap:16px}
+.stat{display:flex;gap:6px;align-items:center;color:#c9cfdb;font-weight:600}.stat.dim{color:var(--mute);font-weight:400}
+.sk{height:124px;background:linear-gradient(90deg,var(--surf) 25%,#2a2f3a 50%,var(--surf) 75%);background-size:200% 100%;animation:sh 1.2s infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.pager{display:flex;gap:4px;align-items:center}
+.pg{min-width:38px;height:38px;border-radius:50%;border:0;background:none;font-weight:600;color:#c9cfdb;padding:0 6px}
+.pg:hover:not(:disabled){background:var(--surf2)}.pg.on{background:var(--blue);color:#fff}.pg:disabled{opacity:.3;cursor:default}.dots{color:var(--mute);padding:0 4px}
+.ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 14px}.ctl .sp{flex:1}
+.cnt{color:var(--mute);margin:0 0 10px}
+.ck{display:inline-flex;gap:8px;align-items:center;color:var(--mute)}
+/* modal, accounts */
+#veil{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:10}#veil.on{display:grid}
+.modal{background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:24px;width:min(460px,92vw);max-height:90vh;overflow:auto}.modal h2{margin:0 0 6px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--surf2);padding:11px 20px;border-radius:12px;z-index:20;box-shadow:0 8px 30px #0008;max-width:80vw}.toast.err{background:#5a2a2a}
+.av{display:grid;place-items:center;font-weight:700;color:#fff;flex:none}
+#pop{position:fixed;left:86px;bottom:14px;width:330px;background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:12px;display:none;z-index:9;box-shadow:0 12px 40px #0008}#pop.on{display:block}
+.ph{color:var(--mute);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px 8px}
+.acc{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px;cursor:pointer}
+.acc:hover{background:var(--surf2)}.acc.on{background:#2b6de02b;box-shadow:inset 0 0 0 1px #2b6de088}
+.acc .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chk{color:var(--blue2);font-weight:800}
+.acc .x{border:0;background:none;color:var(--mute);width:26px;height:26px;border-radius:8px;opacity:0}.acc:hover .x,.acc .x:focus-visible{opacity:1}.acc .x:hover{color:var(--bad);background:#0003}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px;background:#ffffff14;color:var(--mute)}.pill.ms{background:#3ec98a22;color:var(--ok)}.pill.ely{background:#4a85ee26;color:var(--blue2)}
+.addacc{width:100%;margin-top:8px;padding:11px}
+.prov{display:flex;align-items:center;gap:14px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surf);border-radius:14px;padding:14px}
+.prov:hover{border-color:var(--blue2);background:var(--surf2)}.prov .t{flex:1}.prov small{display:block;color:var(--mute)}.prov .arr{color:var(--mute);font-size:22px}
+.pi{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:18px;background:var(--surf2)}.pi.ms{background:#3ec98a26;color:var(--ok)}.pi.ely{background:#4a85ee33;color:var(--blue2)}
+
+.crow .cicon{width:48px;height:48px;border-radius:10px;object-fit:cover;background:var(--surf2);flex:none}
+.crow .ct{display:flex;gap:8px;align-items:center;min-width:0}.crow .nm{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vb{font:11px Consolas,monospace;background:#0004;border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:#b4bccb;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.crow small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .acts{display:flex;gap:10px;align-items:center}.crow .ibtn{background:none;width:36px;height:36px;color:var(--mute)}.crow .ibtn:hover{background:var(--surf2);color:var(--text)}.crow .ibtn.bad:hover{color:var(--bad)}
+.upd{width:36px;height:36px;border-radius:10px;border:0;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700}.upd:hover:not(:disabled){background:var(--blue2)}.upd:disabled{opacity:.6}
+@media (max-width:900px){.hit{grid-template-columns:72px 1fr}.hit>img{width:72px;height:72px}.hs{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body>
+<div id="topbar">
+ <button class="tbb" id="back" aria-label="Back" title="Back (Alt+Left)"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
+ <button class="tbb" id="fwd" aria-label="Forward" title="Forward (Alt+Right)"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button>
+ <span class="tbt">Jern Client</span>
+</div>
+<div id="main"><div id="rail">
+ <img class="logo" src="logo.png" alt="Jern Client">
+ <button class="nav" data-v="home" title="Home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 9.5V20h14V9.5"/></svg></button>
+ <button class="nav" data-v="inst" title="Instances" aria-label="Instances"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+ <button class="nav" data-v="browse" title="Browse" aria-label="Browse"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+ <button class="nav" data-v="set" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+ <button id="me" aria-label="Accounts"></button>
+</div>
+<div id="page"></div></div>
+<div id="pop"></div><div id="veil"><div class="modal" id="modal"></div></div>
+<script>
+const call=window.jern.call;
+const c=async(k,a)=>{const r=await call(k,a);if(!r.ok)throw new Error(r.error);return r.data};
+const E=(t,p={},...k)=>{const e=document.createElement(t);for(const[a,v]of Object.entries(p)){if(a==='class')e.className=v;else if(a==='text')e.textContent=v;else if(a.startsWith('on'))e[a]=v;else if(a==='style')e.style.cssText=v;else if(v===false||v==null){}else e.setAttribute(a,v===true?'':v)}e.append(...k.flat().filter(x=>x!=null&&x!==false&&x!==true&&x!==0));return e};
+// optional children like (cond && element) can be false/0: never print them as text
+for(const m of ['replaceChildren','append','prepend']){const o=Element.prototype[m];Element.prototype[m]=function(...k){return o.apply(this,k.flat().filter(x=>x!=null&&x!==false&&x!==true&&x!==0))}}
+const $=s=>document.querySelector(s);
+let V,ACC={list:[],sel:null},INST=[],view='inst',cur=null,LOG='',state={},B={src:'modrinth',type:'mod',q:'',target:null,page:1,per:20,sort:'relevance',cat:'',compat:true},CFG={};
+const TYPES=[['mod','Mods'],['resourcepack','Resource packs'],['shader','Shaders'],['modpack','Modpacks']];
+const hue=s=>[...s].reduce((a,ch)=>a*31+ch.charCodeAt(0)>>>0,7)%360;
+const grad=s=>{const h=hue(s);return`linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h+50)%360} 60% 24%))`};
+const toast=(m,k='')=>{const t=E('div',{class:'toast '+k,text:m});document.body.append(t);setTimeout(()=>t.remove(),k==='err'?5000:3000)};
+const loaderName=i=>i.loader==='vanilla'?'Vanilla':i.loader[0].toUpperCase()+i.loader.slice(1);
+
+/* ---------- accounts ---------- */
+const TL={ms:'Microsoft',ely:'Ely.by',offline:'Offline'};
+let askRes=null;
+const close=()=>{$('#veil').classList.remove('on');if(askRes){askRes(false);askRes=null}};
+function modal(...k){const m=$('#modal');m.replaceChildren(...k);$('#veil').classList.add('on')}
+$('#veil').onclick=e=>{if(e.target.id==='veil')close()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+function ask(title,text,ok='OK'){return new Promise(res=>{askRes=res;const done=v=>{askRes=null;close();res(v)};
+ modal(E('h2',{text:title}),E('p',{class:'msg',text}),E('div',{class:'row'},E('button',{class:'btn bad',text:ok,onclick:()=>done(true)}),E('button',{class:'btn',text:'Cancel',onclick:()=>done(false)})))})}
+function avatar(a,s=40){
+ const d=E('div',{class:'av',style:`width:${s}px;height:${s}px;border-radius:${Math.round(s/4)}px;font-size:${Math.round(s*.4)}px;background:var(--surf2)`});
+ if(!a){d.textContent='+';return d}
+ d.textContent=a.name[0].toUpperCase();
+ if(a.type==='ms'){d.style.background=`#3a4050 center/cover url(https://mc-heads.net/avatar/${a.uuid}/${s*2})`;d.textContent=''}
+ else if(a.type==='ely'){const u=`https://skinsystem.ely.by/skins/${encodeURIComponent(a.name)}.png`,im=new Image();
+  im.onload=()=>{d.textContent='';d.style.cssText+=`;background-color:#3a4050;background-image:url(${u}),url(${u});background-size:${s*8}px ${s*8}px;background-position:-${s}px -${s}px,-${s*5}px -${s}px;image-rendering:pixelated`};im.src=u;d.style.background=grad(a.name)}
+ else d.style.background=grad(a.name);
+ return d}
+async function loadAcc(){ACC=await c('acc:list');const cu=ACC.list.find(a=>a.id===ACC.sel);$('#me').replaceChildren(avatar(cu,44));$('#me').title=cu?cu.name+' ('+TL[cu.type]+')':'Add an account'}
+function renderPop(){const p=$('#pop');p.replaceChildren(E('div',{class:'ph',text:'Accounts'}));
+ if(!ACC.list.length)p.append(E('p',{class:'msg',style:'padding:2px 8px',text:'No accounts yet. Add one to start playing.'}));
+ ACC.list.forEach(a=>{const on=a.id===ACC.sel;
+  p.append(E('div',{class:'acc'+(on?' on':''),onclick:async()=>{await c('acc:select',a.id);await loadAcc();renderPop()}},
+   avatar(a,38),E('div',{class:'t',style:'flex:1;min-width:0'},E('div',{class:'nm',text:a.name}),E('span',{class:'pill '+a.type,text:TL[a.type]})),
+   on&&E('span',{class:'chk',text:'✓'}),
+   E('button',{class:'x',title:'Remove account','aria-label':'Remove '+a.name,text:'✕',onclick:async e=>{e.stopPropagation();
+    if(await ask('Remove account','Remove '+a.name+' ('+TL[a.type]+') from Jern Client?','Remove')){await c('acc:remove',a.id);await loadAcc();renderPop()}}})))});
+ p.append(E('button',{class:'btn pri addacc',text:'+  Add account',onclick:()=>{p.classList.remove('on');addAccountModal()}}))}
+$('#me').onclick=e=>{e.stopPropagation();renderPop();$('#pop').classList.toggle('on')};
+document.addEventListener('click',e=>{if(!$('#pop').contains(e.target))$('#pop').classList.remove('on')});
+const PROV=[['ms','Microsoft','Premium account: online servers, your skin, Realms.'],['ely','Ely.by','Ely.by account with custom skins.'],['offline','Offline','No login. Singleplayer and offline-mode servers.']];
+function addAccountModal(){
+ modal(E('h2',{text:'Add account'}),E('p',{class:'msg',text:'Choose how you want to sign in.'}),
+  E('div',{class:'list'},...PROV.map(([k,n,d])=>E('button',{class:'prov',onclick:()=>loginForm(k)},E('div',{class:'pi '+k,text:n[0]}),E('div',{class:'t'},E('b',{text:n}),E('small',{text:d})),E('span',{class:'arr',text:'›'})))),
+  E('div',{style:'height:14px'}),E('button',{class:'btn',text:'Cancel',onclick:close}))}
+function loginForm(kind){
+ const err=E('p',{class:'msg e'}),u=E('input',{placeholder:kind==='ely'?'Username or email':'Username (3-16 letters, numbers, _)',autocomplete:'off'}),
+  pw=E('input',{type:'password',placeholder:'Password   (with 2FA: password:CODE)'}),label=kind==='ms'?'Sign in with Microsoft':'Add account',go=E('button',{class:'btn pri',text:label});
+ const submit=async()=>{go.disabled=true;err.textContent='';if(kind==='ms')go.textContent='Waiting for the Microsoft window…';
+  try{const a=await c(kind==='ms'?'login:ms':kind==='ely'?'login:ely':'login:offline',kind==='ely'?{user:u.value,pass:pw.value}:u.value);
+   await loadAcc();close();toast('Signed in as '+a.name)}catch(e){err.textContent=e.message;go.disabled=false;go.textContent=label}};
+ go.onclick=submit;u.onkeydown=pw.onkeydown=e=>{if(e.key==='Enter')submit()};
+ modal(E('button',{class:'crumb',text:'‹ Back',onclick:addAccountModal}),E('h2',{text:TL[kind]+' account'}),
+  E('p',{class:'msg',text:kind==='ms'?'A Microsoft window opens. Sign in with the account that owns Minecraft. You will stay signed in.':kind==='ely'?'Sign in with your Ely.by account. Your Ely.by skin works in game.':'Offline accounts only work in singleplayer and on servers with online-mode off.'}),
+  kind!=='ms'&&E('label',{class:'f',text:kind==='ely'?'Account':'Username'}),kind!=='ms'&&u,
+  kind==='ely'&&E('label',{class:'f',text:'Password'}),kind==='ely'&&pw,
+  E('div',{style:'height:16px'}),err,E('div',{class:'row'},go,E('button',{class:'btn',text:'Cancel',onclick:close})));
+ setTimeout(()=>u.focus(),50)}
+
+/* ---------- navigation history (back / forward) ---------- */
+const H={list:[],i:-1};
+const snap=()=>({view,cur,detailTab,type:B.type,target:B.target});
+function apply(s){view=s.view;cur=s.cur;detailTab=s.detailTab;B.type=s.type;B.target=s.target}
+function navigate(p){const s={...snap(),...p},last=H.list[H.i];
+ if(!last||JSON.stringify(last)!==JSON.stringify(s)){H.list=H.list.slice(0,H.i+1);H.list.push(s);H.i++}
+ apply(s);draw()}
+function step(d){const n=H.i+d;if(n<0||n>=H.list.length)return;H.i=n;apply(H.list[n]);draw()}
+$('#back').onclick=()=>step(-1);$('#fwd').onclick=()=>step(1);
+window.addEventListener('mouseup',e=>{if(e.button===3)step(-1);if(e.button===4)step(1)});
+document.addEventListener('keydown',e=>{if(e.altKey&&e.key==='ArrowLeft')step(-1);if(e.altKey&&e.key==='ArrowRight')step(1)});
+
+/* ---------- helpers ---------- */
+const svg=(inner,cls='')=>{const s=E('span',{class:'ic '+cls});s.innerHTML=`<svg viewBox="0 0 24 24">${inner}</svg>`;return s};
+const IC={dl:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',heart:'<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',play:'<path d="M7 4l13 8-13 8z" fill="currentColor"/>',bolt:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',left:'<path d="m15 5-7 7 7 7"/>',right:'<path d="m9 5 7 7-7 7"/>',plus:'<path d="M12 5v14M5 12h14"/>',up:'<path d="M12 19V5M5 12l7-7 7 7"/>',ext:'<path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/>',refresh:'<path d="M20 11a8 8 0 0 0-14.5-3.5M4 4v4h4M4 13a8 8 0 0 0 14.5 3.5M20 20v-4h-4"/>',cube:'<path d="M12 3 4 7.5v9L12 21l8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/>',pack:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/>'};
+const ic=(k,cls)=>svg(IC[k],cls);
+const fmt=n=>n==null?'':n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(n>=1e8?1:2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':''+n;
+const ago=d=>{const s=(Date.now()-new Date(d))/1000;if(isNaN(s))return'';for(const[k,n]of [[31536e3,'year'],[2592e3,'month'],[86400,'day'],[3600,'hour'],[60,'minute']])if(s>=k){const v=Math.floor(s/k);return v+' '+n+(v>1?'s':'')+' ago'}return'just now'};
+const fsize=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+const ACCENTS={blue:['#2b6de0','#4a85ee'],cyan:['#0fb5cc','#3fd3e8'],violet:['#7a5cf5','#9a82ff'],green:['#2fb67c','#4fd69b'],rose:['#e0527a','#f07a9b']};
+function setAccent(k){const a=ACCENTS[k]||ACCENTS.blue,s=document.documentElement.style;s.setProperty('--blue',a[0]);s.setProperty('--blue2',a[1]);try{localStorage.setItem('accent',k)}catch{}}
+try{setAccent(localStorage.getItem('accent')||'blue')}catch{setAccent('blue')}
+function toggle(on,fn){const t=E('button',{class:'tgl'+(on?' on':''),role:'switch','aria-checked':on?'true':'false',onclick:()=>{const v=!t.classList.contains('on');t.classList.toggle('on',v);t.setAttribute('aria-checked',String(v));fn&&fn(v)}},E('i'));return t}
+const empty=(h,p,...k)=>E('div',{class:'empty'},E('b',{text:h}),p&&E('p',{text:p}),...k);
+
+/* ---------- home ---------- */
+function pageHome(){const P=$('#page'),cu=ACC.list.find(a=>a.id===ACC.sel),rec=[...INST].sort((a,b)=>(b.lastPlayed||0)-(a.lastPlayed||0)),last=rec[0];
+ P.replaceChildren(
+  E('div',{class:'homehero'},E('img',{class:'hl',src:'logo.png',alt:''}),
+   E('div',{style:'flex:1'},E('h1',{text:cu?'Welcome back, '+cu.name:'Welcome to Jern Client'}),E('p',{text:last?'Pick up where you left off.':'Create your first instance to get started.'})),
+   last?E('button',{class:'btn big',style:'background:#fff;color:#111',onclick:()=>launchGo(last.id)},ic('play'),'Play '+last.name):E('button',{class:'btn big',style:'background:#fff;color:#111',onclick:createModal},ic('plus'),'Create instance')),
+  !cu&&E('div',{class:'note warn'},E('div',{style:'flex:1'},E('b',{text:'No account yet'}),E('div',{class:'sub',text:'Add a Microsoft, Ely.by or offline account to play.'})),E('button',{class:'btn pri',text:'Add account',onclick:addAccountModal})),
+  rec.length>0&&E('h2',{class:'sec',text:'Jump back in'}),
+  rec.length>0&&E('div',{class:'grid',style:'margin-bottom:28px'},...rec.slice(0,4).map(instCard)),
+  E('h2',{class:'sec',text:'Discover'}),
+  E('div',{class:'tiles'},
+   ...[['mod','cube','Mods','Browse thousands of mods from Modrinth and CurseForge.'],['resourcepack','pack','Resource packs & shaders','Change how your game looks.'],['modpack','plus','Modpacks','Install a full pack as its own instance.']].map(([ty,ico,n,d])=>
+    E('button',{class:'tile',onclick:()=>navigate({view:'browse',type:ty})},ic(ico),E('b',{text:n}),E('span',{class:'sub',text:d})))),
+  E('div',{class:'note'},ic('bolt'),E('div',{},E('b',{text:'Boost mode'}),E('div',{class:'sub',text:'Installs Sodium, Lithium, FerriteCore, ModernFix, Entity Culling and ImmediatelyFast, and uses tuned Java flags. Gains depend on your hardware.'}))))}
+
+/* ---------- instances ---------- */
+async function loadInst(){INST=await c('inst:list')}
+let detailTab='mod',iq='',isort='played',lastKey='',bType=null,bseq=0;
+const played=i=>i.lastPlayed?'Played '+ago(i.lastPlayed):'Never played';
+const cover=(i,h)=>E('div',{class:'cover',style:`height:${h||112}px;background:${grad(i.name)}`},E('span',{class:'cv',text:i.mc}));
+function launchGo(id){navigate({view:'detail',cur:id,detailTab:'log'});play(id)}
+function instCard(i){const go=()=>navigate({view:'detail',cur:i.id,detailTab:'mod'});
+ return E('div',{class:'card',tabindex:'0',onclick:go,onkeydown:e=>{if(e.key==='Enter')go()}},
+  cover(i),E('div',{class:'badges'},E('span',{class:'bdg',text:loaderName(i)}),i.perf&&E('span',{class:'bdg boost'},ic('bolt'),'Boost')),
+  E('div',{class:'in'},E('b',{text:i.name}),E('span',{class:'sub',text:`${i.mc} · ${i.mods} mod${i.mods===1?'':'s'}`}),E('span',{class:'sub dim',text:played(i)})),
+  E('button',{class:'play',title:'Play','aria-label':'Play '+i.name,onclick:e=>{e.stopPropagation();launchGo(i.id)}},ic('play')))}
+function pageInst(){const P=$('#page'),grid=E('div',{class:'grid'});
+ const q=E('input',{placeholder:'Filter instances…',value:iq,oninput:()=>{iq=q.value;fill()}});
+ const so=E('select',{onchange:()=>{isort=so.value;fill()}},E('option',{value:'played',text:'Last played'}),E('option',{value:'name',text:'Name'}));so.value=isort;
+ function fill(){const l=INST.filter(i=>i.name.toLowerCase().includes(iq.toLowerCase()));l.sort(isort==='name'?(a,b)=>a.name.localeCompare(b.name):(a,b)=>(b.lastPlayed||0)-(a.lastPlayed||0));
+  grid.replaceChildren(...l.map(instCard),E('button',{class:'card add',onclick:createModal},ic('plus'),E('span',{text:'Create instance'})))}
+ P.replaceChildren(E('div',{class:'top'},E('h1',{text:'Instances'}),E('div',{class:'sbox sm'},ic('search'),q),so,E('button',{class:'btn pri',onclick:createModal},ic('plus'),'New instance')),grid);fill()}
+function createModal(){
+ const name=E('input',{placeholder:'My instance'}),ver=E('select'),snap2=E('input',{type:'checkbox'}),
+  ld=E('select',{},...['vanilla','fabric','quilt'].map(x=>E('option',{value:x,text:x[0].toUpperCase()+x.slice(1)}))),
+  perf=toggle(false,v=>{if(v&&ld.value==='vanilla')ld.value='fabric'}),err=E('p',{class:'msg e'});
+ const fill=()=>{ver.replaceChildren(...V.versions.filter(v=>snap2.checked||v.type==='release').map(v=>E('option',{value:v.id,text:v.id})));ver.value=V.latest.release};
+ fill();snap2.onchange=fill;
+ const ok=E('button',{class:'btn pri',text:'Create',onclick:async()=>{try{await c('inst:create',{name:name.value,mc:ver.value,loader:ld.value,perf:perf.classList.contains('on')});await loadInst();close();toast('Instance created');navigate({view:'inst'})}catch(e){err.textContent=e.message}}});
+ modal(E('h2',{text:'New instance'}),E('label',{class:'f',text:'Name'}),name,E('label',{class:'f',text:'Minecraft version'}),ver,
+  E('label',{class:'ck',style:'margin-top:8px'},snap2,'Show snapshots and old versions'),E('label',{class:'f',text:'Mod loader'}),ld,
+  E('div',{class:'row',style:'margin:16px 0 4px'},perf,E('div',{style:'flex:1'},E('b',{text:'Boost'}),E('div',{class:'sub',text:'FPS mods + tuned Java flags (Fabric)'}))),
+  E('div',{style:'height:10px'}),err,E('div',{class:'row'},ok,E('button',{class:'btn',text:'Cancel',onclick:close})));setTimeout(()=>name.focus(),50)}
+async function play(id){try{LOG='';await c('inst:launch',id)}catch(e){toast(e.message,'err');LOG+='ERROR: '+e.message+'\n'}}
+
+/* ---------- instance detail ---------- */
+function pageDetail(){const i=INST.find(x=>x.id===cur);if(!i){view='inst';return draw()}
+ const P=$('#page'),st=state[i.id]||'closed',tab=detailTab;
+ const head=E('div',{class:'dhead',style:'background:'+grad(i.name)},
+  E('div',{class:'dtop'},E('div',{class:'big',text:i.name[0].toUpperCase()}),
+   E('div',{style:'flex:1;min-width:200px'},E('h1',{text:i.name}),E('div',{class:'chips'},E('span',{class:'chip',text:'Minecraft '+i.mc}),E('span',{class:'chip',text:loaderName(i)}),i.perf&&E('span',{class:'chip'},ic('bolt'),'Boost'),E('span',{class:'chip',text:i.mods+' mods'}),E('span',{class:'chip',text:played(i)}))),
+   E('button',{class:'btn pri big',disabled:st!=='closed',onclick:()=>play(i.id)},ic('play'),st==='closed'?'Play':st==='launching'?'Launching…':'Running'),
+   E('button',{class:'ibtn',title:'Open folder','aria-label':'Open folder',onclick:()=>c('inst:open',i.id)},ic('folder')),
+   E('button',{class:'ibtn bad',title:'Delete instance','aria-label':'Delete instance',onclick:async()=>{if(await ask('Delete instance','Delete "'+i.name+'" with all its worlds and mods? This cannot be undone.','Delete')){await c('inst:delete',i.id);await loadInst();navigate({view:'inst'})}}},ic('trash'))),
+  st==='launching'&&E('div',{class:'lp'},E('div',{class:'bar'},E('i',{id:'pg'})),E('span',{id:'pst',text:'Preparing…'})));
+ const TABS=[['mod','Mods'],['resourcepack','Resource packs'],['shader','Shaders'],['cfg','Settings'],['log','Log']],body=E('div');
+ P.replaceChildren(E('div',{class:'crumbs'},E('button',{class:'crumb',text:'Instances',onclick:()=>navigate({view:'inst'})}),'  /  '+i.name),head,
+  E('div',{class:'tabs'},...TABS.map(([k,n])=>E('button',{class:'tab'+(tab===k?' on':''),text:n,onclick:()=>navigate({detailTab:k})}))),body);
+ if(tab==='log')body.append(E('pre',{id:'log',text:LOG||'Launch output appears here.'}));
+ else if(tab==='cfg')instSettings(i,body);else contentTab(i,tab,body)}
+async function contentTab(i,tab,body){
+ const f=E('input',{placeholder:'Filter…'}),list=E('div',{class:'list'}),info=E('span',{class:'sub'}),upAll=E('button',{class:'btn pri',style:'display:none'});
+ let items=[],meta={};
+ body.append(E('div',{class:'top',style:'margin-bottom:12px'},E('div',{class:'sbox sm',style:'flex:1'},ic('search'),f),info,upAll,
+  E('button',{class:'btn',title:'Check for updates',onclick:()=>load()},ic('refresh'),'Check'),
+  E('button',{class:'btn',onclick:()=>navigate({view:'browse',target:i.id,type:tab})},ic('plus'),'Add content')),list);
+ const row=x=>{const m=meta[x.name]||{};
+  const upb=m.update&&E('button',{class:'upd',title:'Update to '+m.update.version,'aria-label':'Update '+(m.title||x.name),onclick:async e=>{const b=e.currentTarget;b.disabled=true;b.textContent='…';
+   try{const r=await c('content:update',{id:i.id,type:tab,name:x.name});toast('Updated '+(m.title||x.name)+(r?' to '+r.version:''));await loadInst();await load()}
+   catch(er){toast(er.message,'err');b.disabled=false;b.replaceChildren(ic('up'))}}},ic('up'));
+  return E('div',{class:'crow'+(x.disabled?' off':'')},
+   E('img',{class:'cicon',src:m.icon||'logo.png',alt:''}),
+   E('div',{class:'t'},E('div',{class:'ct'},E('span',{class:'nm',text:m.title||x.name.replace(/\.disabled$/,'')}),m.version&&E('span',{class:'vb',text:m.version})),E('small',{text:m.desc||fsize(x.size)+(x.disabled?' · disabled':'')})),
+   E('div',{class:'acts'},upb,m.url&&E('button',{class:'ibtn',title:'Open project page','aria-label':'Open project page',onclick:()=>c('open',m.url).catch(()=>{})},ic('ext')),
+    tab==='mod'&&toggle(!x.disabled,async()=>{try{const to=await c('content:toggle',{id:i.id,type:tab,name:x.name});items=items.map(y=>y===x?{...y,name:to,disabled:to.endsWith('.disabled')}:y);if(meta[x.name]){meta[to]=meta[x.name];delete meta[x.name]}show()}catch(e){toast(e.message,'err')}}),
+    E('button',{class:'ibtn bad',title:'Uninstall','aria-label':'Uninstall '+(m.title||x.name),onclick:async()=>{if(await ask('Uninstall','Remove '+(m.title||x.name)+'? Your worlds and configs are not touched.','Uninstall')){await c('content:remove',{id:i.id,type:tab,name:x.name});items=items.filter(y=>y!==x);await loadInst();show()}}},ic('trash'))))};
+ const show=()=>{const q=f.value.toLowerCase(),l=items.filter(x=>(meta[x.name]?.title||x.name).toLowerCase().includes(q));
+  list.replaceChildren(...(l.length?l.map(row):[empty(items.length?'No matches':'Nothing installed yet',items.length?'':'Use "Add content" to browse Modrinth and CurseForge.')]))};
+ async function load(){try{items=await c('content:list',{id:i.id,type:tab});show();if(!items.length){info.textContent='';upAll.style.display='none';return}
+   info.textContent='Checking for updates…';
+   try{meta=await c('content:meta',{id:i.id,type:tab});show();const n=Object.values(meta).filter(m=>m.update).length;
+    info.textContent=n?'':'Everything is up to date';upAll.style.display=n?'':'none';upAll.replaceChildren(ic('up'),`Update all (${n})`)}
+   catch(e){info.textContent='Could not check for updates (offline?)'}}
+  catch(e){list.replaceChildren(E('p',{class:'msg e',text:e.message}))}}
+ upAll.onclick=async()=>{upAll.disabled=true;upAll.textContent='Updating…';
+  try{const r=await c('content:updateAll',{id:i.id,types:[tab]});toast(`Updated ${r.done.length} item${r.done.length===1?'':'s'}`+(r.fail.length?`, ${r.fail.length} failed`:''),r.fail.length?'err':'');await loadInst();await load()}
+  catch(e){toast(e.message,'err')}upAll.disabled=false};
+ f.oninput=show;load()}
+function instSettings(i,body){
+ let useDef=!i.ram;const name=E('input',{value:i.name}),perf=toggle(i.perf),au=toggle(i.autoUpdate),ram=E('input',{type:'range',min:1024,max:16384,step:512,value:i.ram||CFG.ramMax||4096,style:'width:100%;padding:0'}),rv=E('b');
+ const lab=()=>rv.textContent=useDef?'Default ('+(CFG.ramMax||4096)+' MB)':ram.value+' MB';lab();ram.oninput=()=>{useDef=false;lab()};
+ const opt=(sw,t,d)=>E('div',{class:'row',style:'margin:18px 0 4px;align-items:flex-start'},sw,E('div',{style:'flex:1'},E('b',{text:t}),E('div',{class:'sub',text:d})));
+ body.append(E('div',{class:'scard'},E('h3',{text:'Instance settings'}),E('label',{class:'f',text:'Name'}),name,
+  opt(au,'Auto-update mods and packs','Before each launch, installs newer builds for the same Minecraft version. Worlds, configs and options are never touched. Old files are saved in .jern-backups for 14 days.'),
+  opt(perf,'Boost','Performance mods and tuned Java flags (switches to Fabric if Vanilla)'),
+  E('label',{class:'f'},'Memory: ',rv),ram,E('div',{class:'row',style:'margin-top:6px'},E('button',{class:'btn',text:'Use default',onclick:()=>{useDef=true;lab()}})),
+  E('div',{class:'row',style:'margin-top:18px'},E('button',{class:'btn pri',text:'Save changes',onclick:async()=>{try{await c('inst:update',{id:i.id,patch:{name:name.value,perf:perf.classList.contains('on'),autoUpdate:au.classList.contains('on'),ram:useDef?null:+ram.value}});await loadInst();toast('Saved');draw()}catch(e){toast(e.message,'err')}}}))))}
+
+/* ---------- browse (Modrinth style) ---------- */
+const CATS={mod:['adventure','decoration','economy','equipment','food','game-mechanics','library','magic','management','mobs','optimization','social','storage','technology','transportation','utility','worldgen'],
+ resourcepack:['8x-','16x','32x','64x','128x','256x','512x+','blocks','combat','decoration','entities','environment','fonts','gui','items','realistic','simplistic','themed','tweaks','utility','vanilla-like'],
+ shader:['atmosphere','bloom','colored-lighting','foliage','path-tracing','pbr','reflections','shadows','cartoon','fantasy','realistic','semi-realistic','vanilla-like'],
+ modpack:['adventure','challenge','combat','kitchen-sink','lightweight','magic','multiplayer','optimization','quests','technology']};
+function pager(page,pages,go){
+ const set=new Set([1,pages,page-1,page,page+1]);if(page<=3)[2,3,4].forEach(n=>set.add(n));if(page>=pages-2)[pages-1,pages-2,pages-3].forEach(n=>set.add(n));
+ const out=[],nums=[...set].filter(n=>n>=1&&n<=pages).sort((a,b)=>a-b);let prev=0;
+ out.push(E('button',{class:'pg',title:'Previous page','aria-label':'Previous page',disabled:page<=1,onclick:()=>go(page-1)},ic('left')));
+ nums.forEach(n=>{if(n-prev>1)out.push(E('span',{class:'dots',text:'…'}));out.push(E('button',{class:'pg'+(n===page?' on':''),text:n.toLocaleString(),onclick:()=>go(n)}));prev=n});
+ out.push(E('button',{class:'pg',title:'Next page','aria-label':'Next page',disabled:page>=pages,onclick:()=>go(page+1)},ic('right')));
+ return E('div',{class:'pager'},...out)}
+function pageBrowse(){const P=$('#page');
+ if(bType!==B.type){B.page=1;B.cat='';bType=B.type}
+ const label=TYPES.find(x=>x[0]===B.type)[1].toLowerCase(),isPack=B.type==='modpack';
+ const q=E('input',{placeholder:'Search '+label+'…',value:B.q}),res=E('div',{class:'list'}),cnt=E('p',{class:'cnt'}),pt=E('div'),pb=E('div',{style:'display:flex;justify-content:center;margin-top:18px'});
+ const sel=(opts,val,fn)=>{const s=E('select',{onchange:()=>fn(s.value)},...opts.map(([v,n])=>E('option',{value:v,text:n})));s.value=val;return s};
+ if(!INST.find(i=>i.id===B.target))B.target=INST[0]?.id;
+ const cur2=INST.find(i=>i.id===B.target);
+ const ctl=E('div',{class:'ctl'},
+  sel([['modrinth','Modrinth'],['curseforge','CurseForge']],B.src,v=>{B.src=v;run()}),
+  sel([['relevance','Sort by: Relevance'],['downloads','Sort by: Downloads'],['follows','Sort by: Follows'],['newest','Sort by: Newest'],['updated','Sort by: Updated']],B.sort,v=>{B.sort=v;run()}),
+  sel([[10,'View: 10'],[20,'View: 20'],[50,'View: 50']],B.per,v=>{B.per=+v;run()}),
+  B.src==='modrinth'&&sel([['','All categories'],...CATS[B.type].map(c2=>[c2,c2.replace(/-/g,' ')])],B.cat,v=>{B.cat=v;run()}),
+  !isPack&&E('select',{onchange:e=>{B.target=e.target.value;run()}},...INST.map(i=>E('option',{value:i.id,text:`${i.name} (${i.mc})`,selected:i.id===B.target}))),
+  !isPack&&E('label',{class:'ck'},toggle(B.compat,v=>{B.compat=v;run()}),'Compatible only'),
+  E('span',{class:'sp'}),pt);
+ P.replaceChildren(E('div',{class:'top',style:'margin-bottom:12px'},E('h1',{text:'Browse'})),
+  E('div',{class:'tabs'},...TYPES.map(([k,n])=>E('button',{class:'tab'+(B.type===k?' on':''),text:n,onclick:()=>navigate({type:k})}))),
+  E('div',{class:'sbox'},ic('search'),q),ctl,cnt,res,pb);
+ let tm;q.oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>run(),420)};q.onkeydown=e=>{if(e.key==='Enter'){clearTimeout(tm);run()}};
+ const go=n=>{B.page=n;run(true);$('#page').scrollTop=0};
+ function hit(x){
+  const b=E('button',{class:'btn pri',text:isPack?'Create instance':'Install'});
+  b.onclick=async()=>{b.disabled=true;b.textContent='Installing…';
+   try{const o=await c('install',{src:B.src,type:B.type,pid:x.id,id:B.target});await loadInst();b.textContent='Installed ✓';toast('Installed '+o.join(', ').slice(0,90))}
+   catch(e){b.disabled=false;b.textContent='Retry';toast(e.message,'err')}};
+  return E('div',{class:'hit'},E('img',{src:x.icon||'logo.png',alt:''}),
+   E('div',{},E('div',{class:'ht'},E('a',{class:'hn',href:'#',text:x.title,title:'Open project page',onclick:e=>{e.preventDefault();x.url&&c('open',x.url).catch(()=>{})}}),x.author&&E('span',{class:'by',text:'by '+x.author})),
+    E('p',{class:'hd',text:x.desc||''}),E('div',{class:'tags'},...(x.tags||[]).map(t2=>E('span',{class:'tag '+t2.k,text:t2.t})))),
+   E('div',{class:'hs'},E('div',{class:'r'},E('div',{class:'stat',title:'Downloads'},ic('dl'),E('span',{text:fmt(x.downloads)})),x.follows!=null&&E('div',{class:'stat',title:'Follows'},ic('heart'),E('span',{text:fmt(x.follows)}))),
+    E('div',{class:'stat dim'},ic('clock'),E('span',{text:ago(x.updated)})),b))}
+ async function run(keep){const my=++bseq;if(!keep)B.page=1;B.q=q.value;
+  if(!isPack&&!B.target){res.replaceChildren(empty('Create an instance first','Mods, resource packs and shaders install into an instance.',E('button',{class:'btn pri',style:'margin-top:14px',text:'New instance',onclick:createModal})));return}
+  res.replaceChildren(...[1,2,3,4].map(()=>E('div',{class:'hit sk'})));cnt.textContent='';pt.replaceChildren();pb.replaceChildren();
+  try{const r=await c('browse',{src:B.src,type:B.type,q:q.value,id:isPack?null:B.target,page:B.page,per:B.per,sort:B.sort,cat:B.cat,compat:B.compat});
+   if(my!==bseq)return;
+   const pages=Math.max(1,Math.ceil(r.total/B.per));
+   cnt.textContent=r.total.toLocaleString()+' result'+(r.total===1?'':'s')+(isPack?' · installing a modpack creates a new instance':cur2&&B.compat?' · compatible with '+cur2.mc:'');
+   res.replaceChildren(...(r.hits.length?r.hits.map(hit):[empty('No results','Try another search, or switch off "Compatible only".')]));
+   if(pages>1){pt.append(pager(B.page,pages,go));pb.append(pager(B.page,pages,go))}}
+  catch(e){if(my!==bseq)return;res.replaceChildren(empty('Could not load results',e.message))}}
+ run(true)}
+
+/* ---------- settings ---------- */
+async function pageSet(){const P=$('#page');CFG=await c('cfg:get');const vs=await c('versions:installed');
+ const dir=E('input',{value:CFG.gameDir,readonly:true}),java=E('input',{value:CFG.javaPath,placeholder:'Auto-download the right Java'}),
+  ram=E('input',{type:'range',min:1024,max:16384,step:512,value:CFG.ramMax,style:'width:100%;padding:0'}),rv=E('b',{text:CFG.ramMax+' MB'}),cf=E('input',{type:'password',value:CFG.cfKey,placeholder:'console.curseforge.com'});
+ ram.oninput=()=>rv.textContent=ram.value+' MB';
+ const al=E('select',{onchange:()=>sync()},E('option',{value:'keep',text:'Keep the launcher open'}),E('option',{value:'minimize',text:'Minimize the launcher'}),E('option',{value:'close',text:'Close the launcher'}));al.value=CFG.afterLaunch||'keep';
+ const rs=toggle(CFG.restoreOnExit!==false),rsRow=E('div',{class:'row',style:'margin-top:16px;align-items:flex-start'},rs,E('div',{style:'flex:1'},E('b',{text:'Bring the launcher back when the game closes'}),E('div',{class:'sub',text:'Only applies when minimizing.'})));
+ const sync=()=>{rsRow.style.opacity=al.value==='minimize'?'1':'.45'};sync();
+ const card=(t,d,...k)=>E('div',{class:'scard'},E('h3',{text:t}),d&&E('p',{class:'msg',text:d}),...k);
+ const cur3=(()=>{try{return localStorage.getItem('accent')||'blue'}catch{return'blue'}})();
+ const sw=E('div',{class:'swatches'},...Object.entries(ACCENTS).map(([k,v])=>E('button',{class:'sw'+(k===cur3?' on':''),title:k,'aria-label':k+' accent',style:'background:'+v[0],onclick:()=>{setAccent(k);sw.querySelectorAll('.sw').forEach(s=>s.classList.toggle('on',s.title===k))}})));
+ const vl=E('div',{class:'list'});if(!vs.length)vl.append(E('p',{class:'msg',text:'No game versions downloaded yet.'}));
+ vs.forEach(n=>vl.append(E('div',{class:'item'},E('div',{class:'t',text:n}),E('button',{class:'btn bad',text:'Uninstall',onclick:async()=>{if(await ask('Uninstall version','Delete downloaded files for '+n+'? Instances using it will download it again.','Uninstall')){await c('versions:remove',n);pageSet()}}}))));
+ P.replaceChildren(E('div',{class:'top'},E('h1',{text:'Settings'})),
+  card('Appearance','Pick an accent colour.',sw),
+  card('Game',null,E('label',{class:'f',text:'Data folder (instances, game files, Java)'}),E('div',{class:'row'},E('div',{style:'flex:1'},dir),E('button',{class:'btn',text:'Change…',onclick:async()=>{const d=await c('pick-dir');if(d)dir.value=d}})),
+   E('label',{class:'f',text:'Java path'}),java,E('label',{class:'f'},'Default max RAM: ',rv),ram),
+  card('When Minecraft starts','Choose what the launcher does once the game window is opening.',al,al.value!==undefined&&rsRow,E('p',{class:'sub',style:'margin:12px 0 0',text:'"Close" quits the launcher; the game keeps running on its own, but you lose the live log.'})),
+  card('CurseForge','A free API key is needed to search CurseForge.',cf),
+  E('div',{class:'row',style:'margin:0 0 26px'},E('button',{class:'btn pri',text:'Save settings',onclick:async()=>{CFG=await c('cfg:set',{gameDir:dir.value,javaPath:java.value.trim(),ramMax:+ram.value,cfKey:cf.value.trim(),afterLaunch:al.value,restoreOnExit:rs.classList.contains('on')});await loadInst();toast('Settings saved')}})),
+  card('Downloaded game versions',null,vl),
+  card('About','Jern Client 1.1. Boost installs well-known performance mods; real FPS gains depend on your hardware and settings.'))}
+
+/* ---------- shell ---------- */
+function draw(){$('#back').disabled=H.i<=0;$('#fwd').disabled=H.i>=H.list.length-1;
+ document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v===(view==='detail'?'inst':view)));
+ const P=$('#page'),key=[view,cur,detailTab,B.type].join('|');if(key!==lastKey){P.classList.remove('fade');void P.offsetWidth;P.classList.add('fade');lastKey=key}
+ ({home:pageHome,inst:pageInst,detail:pageDetail,browse:pageBrowse,set:pageSet})[view]()}
+document.querySelectorAll('.nav').forEach(b=>b.onclick=async()=>{await loadInst();navigate({view:b.dataset.v})});
+$('.logo').onclick=async()=>{await loadInst();navigate({view:'home'})};
+document.addEventListener('keydown',e=>{if(e.key==='/'&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)){const s=$('.sbox input');if(s){e.preventDefault();s.focus()}}});
+window.jern.on('log',m=>{LOG+=m+'\n';const l=$('#log');if(l){l.textContent=LOG;l.scrollTop=l.scrollHeight}const s=$('#pst');if(s)s.textContent=String(m).slice(0,90)});
+window.jern.on('progress',p=>{const g=$('#pg'),s=$('#pst');if(g)g.style.width=(p.total?p.task/p.total*100:0)+'%';if(s&&p.total)s.textContent=`Downloading ${p.type}: ${p.task}/${p.total}`});
+window.jern.on('state',({id,s})=>{state[id]=s;
+ if(s==='launching'){if(view==='detail'&&cur===id){detailTab='log';draw()}return}
+ loadInst().then(()=>{if(view==='detail'&&cur===id||view==='home'||view==='inst')draw()})});
+(async()=>{try{V=await c('versions').catch(()=>({latest:{release:''},versions:[]}));CFG=await c('cfg:get');await loadAcc();await loadInst();navigate({view:'home'})}catch(e){$('#page').textContent='Startup error: '+e.message}})();
+</script></body></html>
