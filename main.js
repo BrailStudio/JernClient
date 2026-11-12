@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeImage } = require('electron');
+const zlib = require('zlib');
+const { spawn } = require('child_process');
 const path = require('path'), fs = require('fs'), os = require('os'), crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const { Client, Authenticator } = require('minecraft-launcher-core');
@@ -14,6 +16,12 @@ try { S = { ...S, ...JSON.parse(fs.readFileSync(CFG, 'utf8')) }; } catch {}
 try { A = JSON.parse(fs.readFileSync(ACC, 'utf8')); } catch {}
 const wr = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 1)); };
 const saveS = () => wr(CFG, S), saveA = () => wr(ACC, A);
+// ---- data-folder hand-off with the installer: datadir.txt mirrors the folder, datadir.pending = "installer picked a new one" ----
+const DD = path.join(app.getPath('userData'), 'datadir.txt'), PEND = path.join(app.getPath('userData'), 'datadir.pending');
+const readDD = () => { try { const b = fs.readFileSync(DD); return (b[0] === 0xFF && b[1] === 0xFE ? b.slice(2).toString('utf16le') : b.toString('utf8')).replace(/^\uFEFF/, '').trim(); } catch { return ''; } };
+const writeDD = p => { try { fs.mkdirSync(path.dirname(DD), { recursive: true }); fs.writeFileSync(DD, Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(p, 'utf16le')])); } catch {} };
+if (fs.existsSync(PEND)) { const p = readDD(); if (p) { S.gameDir = p; saveS(); } try { fs.rmSync(PEND); } catch {} }
+writeDD(S.gameDir);
 // tokens are encrypted with the OS keychain (DPAPI on Windows) when available
 const enc = o => { const s = JSON.stringify(o); return safeStorage.isEncryptionAvailable() ? 'e:' + safeStorage.encryptString(s).toString('base64') : 'p:' + Buffer.from(s).toString('base64'); };
 const dec = t => JSON.parse(t.startsWith('e:') ? safeStorage.decryptString(Buffer.from(t.slice(2), 'base64')) : Buffer.from(t.slice(2), 'base64').toString());
@@ -30,7 +38,7 @@ const UA = { 'User-Agent': 'JernClient/1.1' };
 const J = async (u, hd = {}) => { const r = await fetch(u, { headers: { ...UA, ...hd } }); if (!r.ok) throw new Error(`${r.status} ${u}`); return r.json(); };
 const dl = async (u, dest) => { const r = await fetch(u, { headers: UA }); if (!r.ok) throw new Error(`${r.status} ${u}`); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer())); return dest; };
 const CF = p => J('https://api.curseforge.com/v1' + p, { 'x-api-key': S.cfKey });
-const DIR = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' };
+const DIR = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks', schematic: 'schematics' };
 const LT = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 };
 
 // ---------- instances (each has its own mods/saves/configs; assets+libraries are shared) ----------
@@ -40,16 +48,21 @@ const saveI = l => wr(IFILE(), l);
 const getI = id => { const i = loadI().find(x => x.id === id); if (!i) throw new Error('Instance not found'); return i; };
 const idir = i => path.join(S.gameDir, 'instances', i.id);
 const inside = (i, rel) => { const root = path.resolve(idir(i)), f = path.resolve(root, rel); if (f !== root && !f.startsWith(root + path.sep)) throw new Error('Blocked path: ' + rel); return f; };
-function newInstance({ name, mc, loader = 'vanilla', loaderVer = null, perf = false, autoUpdate = true }) {
+function newInstance({ name, mc, loader = 'vanilla', loaderVer = null, perf = false, autoUpdate = true, modpack = false }) {
   name = (name || '').trim(); if (!name) throw new Error('Give the instance a name');
   if (perf && loader === 'vanilla') loader = 'fabric';
-  const i = { id: crypto.randomUUID().slice(0, 8), name, mc, loader, loaderVer, perf, autoUpdate };
+  if (loader === 'forge' && mcMinor(mc) < 13) throw new Error('Forge for Minecraft older than 1.13 is not supported yet');
+  const i = { id: crypto.randomUUID().slice(0, 8), name, mc, loader, loaderVer, perf, autoUpdate, modpack };
   saveI([...loadI(), i]); fs.mkdirSync(idir(i), { recursive: true }); return i;
 }
 function extractOverrides(i, z, prefixes) {
+  const names = [];
   for (const e of z.getEntries()) for (const p of prefixes)
-    if (e.entryName.startsWith(p) && !e.isDirectory) { const d = inside(i, e.entryName.slice(p.length)); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.writeFileSync(d, e.getData()); }
+    if (e.entryName.startsWith(p) && !e.isDirectory) { const d = inside(i, e.entryName.slice(p.length)); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.writeFileSync(d, e.getData()); names.push(path.basename(d)); }
+  return names;
 }
+const writePack = (i, names) => fs.writeFileSync(inside(i, '.jern-pack.json'), JSON.stringify(names));
+const readPack = i => { try { return new Set(JSON.parse(fs.readFileSync(inside(i, '.jern-pack.json'), 'utf8'))); } catch { return new Set(); } };
 
 // ---------- Java (auto-downloads the runtime each MC version needs) ----------
 function findJava(d) {
@@ -90,6 +103,70 @@ async function ensureLoader(i) {
   if (!fs.existsSync(f)) wr(f, p);
   return p.id;
 }
+// ---------- Forge / NeoForge (official installer, run once per loader version) ----------
+function mcMinor(mc) { return String(mc).startsWith('1.') ? parseInt(String(mc).split('.')[1]) : 99; }
+async function latestForge(mc) {
+  const p = await J('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
+  const v = p.promos[`${mc}-recommended`] || p.promos[`${mc}-latest`];
+  if (!v) throw new Error(`Forge has no build for Minecraft ${mc}`); return v;
+}
+async function latestNeo(mc) {
+  const r = await fetch('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml', { headers: UA }); if (!r.ok) throw new Error('NeoForge metadata ' + r.status);
+  const vs = [...(await r.text()).matchAll(/<version>([^<]+)<\/version>/g)].map(x => x[1]);
+  const rest = String(mc).startsWith('1.') ? String(mc).slice(2) : String(mc), pre = (rest.split('.').length === 1 ? rest + '.0' : rest) + '.';
+  const c = vs.filter(v => v.startsWith(pre)); if (!c.length) throw new Error(`NeoForge has no build for Minecraft ${mc}`);
+  const stable = c.filter(v => !/alpha|beta|rc/i.test(v)); return (stable.length ? stable : c).pop();
+}
+function runInstaller(java, args) {
+  return new Promise(res => {
+    let tail = ''; const p = spawn(java, args, { cwd: S.gameDir });
+    const on = d => { const s = d.toString(); tail = (tail + s).slice(-2000); s.split(/\r?\n/).filter(Boolean).forEach(l => log('[installer] ' + l.slice(0, 160))); };
+    p.stdout.on('data', on); p.stderr.on('data', on);
+    p.on('error', e => res({ code: -1, tail: e.message })); p.on('close', code => res({ code, tail }));
+  });
+}
+// MCLC builds its own JVM args and ignores the ones in the loader's version file, which modern Forge/NeoForge need.
+// So: merge vanilla + loader game args once, and return the loader's JVM args with every placeholder resolved.
+async function prepLoaderJson(jf, id, mc) {
+  const j = JSON.parse(fs.readFileSync(jf, 'utf8'));
+  if (!j._jernMerged) {
+    const man = await J('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'), v = man.versions.find(x => x.id === (j.inheritsFrom || mc));
+    if (v && j.arguments?.game) { const van = await J(v.url); j.arguments.game = [...(van.arguments?.game || []), ...j.arguments.game]; }
+    j._jernMerged = true; fs.writeFileSync(jf, JSON.stringify(j));
+  }
+  return j;
+}
+function loaderJvmArgs(j, id) {
+  const lib = path.resolve(S.gameDir, 'libraries'), plat = process.platform;
+  const sub = s => s.replaceAll('${library_directory}', lib).replaceAll('${classpath_separator}', path.delimiter).replaceAll('${version_name}', id).replaceAll('${launcher_name}', 'JernClient').replaceAll('${launcher_version}', '1.2');
+  const ok = a => !a.rules || a.rules.every(r => { const os_ = r.os?.name, m = !os_ || (os_ === 'windows' ? plat === 'win32' : os_ === 'osx' ? plat === 'darwin' : plat === 'linux'); return r.action === 'allow' ? m : !m; });
+  const list = []; for (const a of j.arguments?.jvm || []) { if (typeof a === 'string') list.push(a); else if (ok(a)) list.push(...[].concat(a.value)); }
+  const out = [];
+  for (let k = 0; k < list.length; k++) {
+    const s = list[k]; if (s === '-cp' || s === '-classpath') { k++; continue; }
+    if (s.includes('${classpath}') || s.includes('${natives_directory}')) continue;
+    const r = sub(s); if (!r.includes('${')) out.push(r);
+  }
+  return out;
+}
+async function ensureForgeLike(i) {
+  const forge = i.loader === 'forge', label = forge ? 'Forge' : 'NeoForge';
+  if (forge && mcMinor(i.mc) < 13) throw new Error('Forge for Minecraft older than 1.13 is not supported yet');
+  const v = i.loaderVer || (forge ? await latestForge(i.mc) : await latestNeo(i.mc)), id = forge ? `${i.mc}-forge-${v}` : `neoforge-${v}`;
+  const jf = path.join(S.gameDir, 'versions', id, id + '.json');
+  if (!fs.existsSync(jf)) {
+    log(`Installing ${label} ${v} (first time only - this can take a few minutes)…`);
+    const url = forge ? `https://maven.minecraftforge.net/net/minecraftforge/forge/${i.mc}-${v}/forge-${i.mc}-${v}-installer.jar` : `https://maven.neoforged.net/releases/net/neoforged/neoforge/${v}/neoforge-${v}-installer.jar`;
+    const jar = await dl(url, path.join(S.gameDir, 'installers', path.basename(url)));
+    const lp = path.join(S.gameDir, 'launcher_profiles.json'); if (!fs.existsSync(lp)) wr(lp, { profiles: {}, selectedProfile: '', version: 3 });
+    const java = (await ensureJava(i.mc)).replace(/javaw\.exe$/i, 'java.exe');
+    let last = '';
+    for (const flag of forge ? ['--installClient'] : ['--install-client', '--installClient']) { last = (await runInstaller(java, ['-jar', jar, flag, S.gameDir])).tail; if (fs.existsSync(jf)) break; }
+    if (!fs.existsSync(jf)) throw new Error(`${label} installer failed: ${last.slice(-300).trim()}`);
+  }
+  return { id, jvm: loaderJvmArgs(await prepLoaderJson(jf, id, i.mc), id) };
+}
+
 const PERF = ['sodium', 'lithium', 'ferrite-core', 'modernfix', 'entityculling', 'immediatelyfast'];
 async function ensurePerfMods(i) {
   const mark = inside(i, 'mods/.jern-perf'); if (fs.existsSync(mark)) return;
@@ -112,15 +189,17 @@ async function mrInstall(i, id, type, seen = new Set()) {
     if (d.dependency_type === 'required' && d.project_id) { try { out.push(...await mrInstall(i, d.project_id, 'mod', seen)); } catch (e) { log('Dependency skipped: ' + e.message); } }
   return out;
 }
+async function installMrpack(file) {
+  const z = new AdmZip(file), idx = JSON.parse(z.readAsText('modrinth.index.json')), d = idx.dependencies;
+  const lk = ['fabric-loader', 'quilt-loader', 'neoforge', 'forge'].find(k => d[k]);
+  const i = newInstance({ name: idx.name, mc: d.minecraft, loader: lk ? lk.replace('-loader', '') : 'vanilla', loaderVer: lk ? d[lk] : null, autoUpdate: false, modpack: true }), names = [];
+  for (const x of idx.files) { if (x.env?.client === 'unsupported') continue; await dl(x.downloads[0], inside(i, x.path)); names.push(path.basename(x.path)); log('✓ ' + x.path); }
+  names.push(...extractOverrides(i, z, ['overrides/', 'client-overrides/'])); writePack(i, names); return i;
+}
 async function packFromMr(pid) {
   const v = (await J(`https://api.modrinth.com/v2/project/${pid}/version`))[0]; if (!v) throw new Error('Modpack has no versions');
   const f = v.files.find(x => x.primary) || v.files[0];
-  const z = new AdmZip(await dl(f.url, path.join(os.tmpdir(), 'jern-mr.zip'))), idx = JSON.parse(z.readAsText('modrinth.index.json')), d = idx.dependencies;
-  const lk = ['fabric-loader', 'quilt-loader'].find(k => d[k]);
-  if (!lk && (d.forge || d.neoforge)) throw new Error('Forge/NeoForge modpacks are not supported yet');
-  const i = newInstance({ name: idx.name, mc: d.minecraft, loader: lk ? lk.split('-')[0] : 'vanilla', loaderVer: lk ? d[lk] : null, autoUpdate: false });
-  for (const x of idx.files) { if (x.env?.client === 'unsupported') continue; await dl(x.downloads[0], inside(i, x.path)); log('✓ ' + x.path); }
-  extractOverrides(i, z, ['overrides/', 'client-overrides/']); return i;
+  return installMrpack(await dl(f.url, path.join(os.tmpdir(), 'jern-mr.zip')));
 }
 
 // ---------- CurseForge ----------
@@ -132,18 +211,18 @@ async function cfFile(id, i) {
   return f;
 }
 async function cfInstall(i, id, type) { const f = await cfFile(id, type === 'mod' ? i : { mc: i.mc, loader: 'vanilla' }); await dl(f.downloadUrl, inside(i, path.join(DIR[type], f.fileName))); return [f.fileName]; }
-async function packFromCf(pid) {
-  const f = await cfFile(pid, null);
-  const z = new AdmZip(await dl(f.downloadUrl, path.join(os.tmpdir(), 'jern-cf.zip'))), m = JSON.parse(z.readAsText('manifest.json'));
-  const ml = (m.minecraft.modLoaders.find(x => x.primary) || m.minecraft.modLoaders[0])?.id || '', ln = ml.split('-')[0], lv = ml.split('-').slice(1).join('-');
-  if (ml && !['fabric', 'quilt'].includes(ln)) throw new Error('Forge/NeoForge modpacks are not supported yet');
-  const i = newInstance({ name: m.name, mc: m.minecraft.version, loader: ln || 'vanilla', loaderVer: lv || null, autoUpdate: false });
-  for (const x of m.files) {
+async function installCfpack(file) {
+  const z = new AdmZip(file), man = JSON.parse(z.readAsText('manifest.json'));
+  const ml = (man.minecraft.modLoaders.find(x => x.primary) || man.minecraft.modLoaders[0])?.id || '', ln = ml.split('-')[0], lv = ml.split('-').slice(1).join('-');
+  if (ml && !['fabric', 'quilt', 'forge', 'neoforge'].includes(ln)) throw new Error('Unsupported mod loader: ' + ln);
+  const i = newInstance({ name: man.name, mc: man.minecraft.version, loader: ln || 'vanilla', loaderVer: lv || null, autoUpdate: false, modpack: true }), names = [];
+  for (const x of man.files) {
     const d = (await CF(`/mods/${x.projectID}/files/${x.fileID}`)).data;
-    if (d.downloadUrl) { await dl(d.downloadUrl, inside(i, 'mods/' + d.fileName)); log('✓ ' + d.fileName); } else log('✗ download manually: ' + d.fileName);
+    if (d.downloadUrl) { await dl(d.downloadUrl, inside(i, 'mods/' + d.fileName)); names.push(d.fileName); log('✓ ' + d.fileName); } else log('✗ download manually: ' + d.fileName);
   }
-  extractOverrides(i, z, [(m.overrides || 'overrides') + '/']); return i;
+  names.push(...extractOverrides(i, z, [(man.overrides || 'overrides') + '/'])); writePack(i, names); return i;
 }
+async function packFromCf(pid) { const f = await cfFile(pid, null); return installCfpack(await dl(f.downloadUrl, path.join(os.tmpdir(), 'jern-cf.zip'))); }
 
 // ---------- authentication ----------
 const ELY = 'https://authserver.ely.by';
@@ -191,13 +270,37 @@ h('login:ely', async ({ user, pass }) => {
 
 // ---------- IPC ----------
 h('cfg:get', () => S);
-h('cfg:set', p => { S = { ...S, ...p }; saveS(); return S; });
+h('cfg:set', p => {
+  if (p.gameDir && app.isPackaged && path.resolve(p.gameDir) === path.resolve(path.dirname(process.execPath))) throw new Error("Choose a sub-folder - not the launcher's own folder (an update would clear it).");
+  S = { ...S, ...p }; saveS(); writeDD(S.gameDir); return S;
+});
 h('pick-dir', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
 h('versions', async () => { const m = await J('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'); return { latest: m.latest, versions: m.versions.map(v => ({ id: v.id, type: v.type })) }; });
 h('versions:installed', () => { const d = path.join(S.gameDir, 'versions'); return fs.existsSync(d) ? fs.readdirSync(d) : []; });
 h('versions:remove', n => { const d = path.resolve(S.gameDir, 'versions'), f = path.resolve(d, n); if (!f.startsWith(d + path.sep)) throw new Error('Blocked'); fs.rmSync(f, { recursive: true, force: true }); return true; });
 
-h('inst:list', () => loadI().map(i => { let mods = 0; try { mods = fs.readdirSync(path.join(idir(i), 'mods')).filter(n => n.endsWith('.jar')).length; } catch {} return { ...i, mods }; }));
+const IMGC = new Map();
+const imgData = (i, kind) => { const f = path.join(idir(i), kind === 'icon' ? 'icon.png' : 'cover.jpg'); try { const st = fs.statSync(f), k = f + st.mtimeMs; if (!IMGC.has(k)) IMGC.set(k, `data:image/${kind === 'icon' ? 'png' : 'jpeg'};base64,` + fs.readFileSync(f).toString('base64')); return IMGC.get(k); } catch { return null; } };
+function saveImg(i, kind, src) {
+  const img = Buffer.isBuffer(src) ? nativeImage.createFromBuffer(src) : nativeImage.createFromPath(src);
+  if (img.isEmpty()) throw new Error('Could not read that image');
+  const sz = img.getSize(); fs.mkdirSync(idir(i), { recursive: true });
+  if (kind === 'icon') { const s = Math.min(sz.width, sz.height); fs.writeFileSync(path.join(idir(i), 'icon.png'), img.crop({ x: Math.floor((sz.width - s) / 2), y: Math.floor((sz.height - s) / 2), width: s, height: s }).resize({ width: 128, height: 128, quality: 'best' }).toPNG()); }
+  else { const r = sz.width > 1280 ? img.resize({ width: 1280, quality: 'good' }) : img; fs.writeFileSync(path.join(idir(i), 'cover.jpg'), r.toJPEG(82)); }
+}
+const cnt = (d, f = () => true) => { try { return fs.readdirSync(d).filter(n => !n.startsWith('.') && f(n)).length; } catch { return 0; } };
+h('inst:list', () => loadI().map(i => {
+  const d = idir(i), counts = { mod: cnt(path.join(d, 'mods'), n => /\.jar(\.disabled)?$/.test(n)), resourcepack: cnt(path.join(d, 'resourcepacks')), shader: cnt(path.join(d, 'shaderpacks')), schematic: cnt(path.join(d, 'schematics')), world: cnt(path.join(d, 'saves'), n => fs.existsSync(path.join(d, 'saves', n, 'level.dat'))) };
+  return { ...i, mods: counts.mod, counts, icon: imgData(i, 'icon'), cover: imgData(i, 'cover') };
+}));
+h('inst:image', ({ id, kind, file }) => { const i = getI(id); if (file) saveImg(i, kind, file); else fs.rmSync(path.join(idir(i), kind === 'icon' ? 'icon.png' : 'cover.jpg'), { force: true }); return true; });
+h('pick-file', async ({ filters, title }) => { const r = await dialog.showOpenDialog(win, { title, properties: ['openFile'], filters }); return r.canceled ? null : r.filePaths[0]; });
+h('inst:import', async ({ file }) => {
+  const z = new AdmZip(file), names = z.getEntries().map(e => e.entryName);
+  if (names.includes('modrinth.index.json')) return installMrpack(file);
+  if (names.includes('manifest.json')) return installCfpack(file);
+  throw new Error('Not a Modrinth (.mrpack) or CurseForge modpack');
+});
 h('inst:update', ({ id, patch }) => {
   const l = loadI(), i = l.find(x => x.id === id); if (!i) throw new Error('Instance not found');
   if (patch.name !== undefined) { if (!String(patch.name).trim()) throw new Error('Name cannot be empty'); i.name = String(patch.name).trim(); }
@@ -208,7 +311,7 @@ h('inst:update', ({ id, patch }) => {
 });
 h('open', u => { if (!/^https:\/\/(modrinth\.com|www\.curseforge\.com)\//.test(u)) throw new Error('Blocked link'); return shell.openExternal(u); });
 h('inst:create', a => newInstance(a));
-h('inst:delete', id => { const i = getI(id); fs.rmSync(idir(i), { recursive: true, force: true }); saveI(loadI().filter(x => x.id !== id)); return true; });
+h('inst:delete', id => { IM.t = 0; const i = getI(id); fs.rmSync(idir(i), { recursive: true, force: true }); saveI(loadI().filter(x => x.id !== id)); return true; });
 h('inst:open', id => { const i = getI(id); fs.mkdirSync(idir(i), { recursive: true }); return shell.openPath(idir(i)); });
 // ---------- content metadata + safe updates (Modrinth hash lookup) ----------
 const sha1 = f => crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
@@ -284,43 +387,152 @@ async function updateAllFor(i, types = ['mod', 'resourcepack', 'shader']) {
   pruneBackups(i); return { done, fail };
 }
 h('content:meta', ({ id, type }) => metaFor(getI(id), type));
-h('content:update', ({ id, type, name }) => { const i = getI(id); return updateOne(i, type, name, new Date().toISOString().replace(/[:.]/g, '-')).then(r => { pruneBackups(i); return r; }); });
-h('content:updateAll', ({ id, types }) => updateAllFor(getI(id), types));
+h('content:update', ({ id, type, name }) => { IM.t = 0; const i = getI(id); return updateOne(i, type, name, new Date().toISOString().replace(/[:.]/g, '-')).then(r => { pruneBackups(i); return r; }); });
+h('content:updateAll', ({ id, types }) => { IM.t = 0; return updateAllFor(getI(id), types); });
 h('content:list', ({ id, type }) => {
   const d = inside(getI(id), DIR[type]); if (!fs.existsSync(d)) return [];
-  return fs.readdirSync(d).filter(n => !n.startsWith('.')).map(n => { const st = fs.statSync(path.join(d, n)); return { name: n, size: st.isDirectory() ? 0 : st.size, disabled: n.endsWith('.disabled') }; });
+  const pk = readPack(getI(id));
+  return fs.readdirSync(d).filter(n => !n.startsWith('.')).map(n => { const st = fs.statSync(path.join(d, n)); return { name: n, size: st.isDirectory() ? 0 : st.size, disabled: n.endsWith('.disabled'), pack: pk.has(n.replace(/\.disabled$/, '')) }; });
 });
+h('content:import', ({ id, type, file }) => { const i = getI(id), d = inside(i, path.join(DIR[type], path.basename(file))); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(file, d); return path.basename(d); });
 h('content:toggle', ({ id, type, name }) => { const i = getI(id), to = name.endsWith('.disabled') ? name.slice(0, -9) : name + '.disabled'; fs.renameSync(inside(i, path.join(DIR[type], name)), inside(i, path.join(DIR[type], to))); return to; });
-h('content:remove', ({ id, type, name }) => { fs.rmSync(inside(getI(id), path.join(DIR[type], name)), { recursive: true, force: true }); return true; });
+h('content:remove', ({ id, type, name }) => { IM.t = 0; fs.rmSync(inside(getI(id), path.join(DIR[type], name)), { recursive: true, force: true }); return true; });
 
-h('browse', async ({ src, type, q, id, page = 1, per = 20, sort = 'relevance', cat = '', compat = true }) => {
-  const i = id ? getI(id) : null, off = (page - 1) * per, LD = ['fabric', 'forge', 'neoforge', 'quilt'];
+let TAGS = null;
+h('mr:tags', async () => {
+  if (!TAGS) { const [v, c] = await Promise.all([J('https://api.modrinth.com/v2/tag/game_version'), J('https://api.modrinth.com/v2/tag/category')]); TAGS = { releases: v.filter(x => x.version_type === 'release').map(x => x.version), all: v.map(x => x.version), cats: c.map(x => ({ n: x.name, t: x.project_type })) }; }
+  return TAGS;
+});
+const IM = { t: 0, v: null, k: '' };
+h('installed:map', async ({ types = ['mod'] }) => {
+  if (Date.now() - IM.t < 300000 && IM.v && IM.k === types.join()) return IM.v;
+  const out = {};
+  for (const i of loadI()) for (const type of types) { try { const { vers } = await lookup(i, type); for (const v of Object.values(vers)) (out[v.project_id] ??= []).push(i.id); } catch {} }
+  IM.t = Date.now(); IM.v = out; IM.k = types.join(); return out;
+});
+h('browse', async ({ src, type, q, page = 1, per = 20, sort = 'relevance', loaders = [], versions = [], cats = [], env = [] }) => {
+  const off = (page - 1) * per;
   if (src === 'modrinth') {
     const f = [[`project_type:${type}`]];
-    if (i && compat && type !== 'modpack') f.push([`versions:${i.mc}`]);
-    if (i && compat && type === 'mod' && i.loader !== 'vanilla') f.push([`categories:${i.loader}`]);
-    if (cat) f.push([`categories:${cat}`]);
+    if (versions.length) f.push(versions.map(v => `versions:${v}`));
+    if (loaders.length && (type === 'mod' || type === 'modpack')) f.push(loaders.map(l => `categories:${l}`));
+    cats.forEach(c => f.push([`categories:${c}`]));
+    if (env.includes('client')) f.push(['client_side:required', 'client_side:optional']);
+    if (env.includes('server')) f.push(['server_side:required', 'server_side:optional']);
     const r = await J(`https://api.modrinth.com/v2/search?limit=${per}&offset=${off}&index=${sort}&query=${encodeURIComponent(q || '')}&facets=${encodeURIComponent(JSON.stringify(f))}`);
+    const LD = ['fabric', 'forge', 'neoforge', 'quilt'];
     return { total: r.total_hits, hits: r.hits.map(x => {
-      const ok = v => v !== 'unsupported', env = ok(x.client_side) && ok(x.server_side) ? 'Client or server' : ok(x.client_side) ? 'Client' : 'Server';
-      const cats = (x.display_categories || x.categories || []).filter(c => !LD.includes(c));
-      const tags = [...(type === 'mod' ? [{ t: env, k: 'env' }] : []), ...cats.slice(0, 3).map(c => ({ t: c.replace(/-/g, ' '), k: 'cat' })), ...(x.categories || []).filter(c => LD.includes(c)).map(c => ({ t: c, k: 'loader' }))];
-      return { id: x.project_id, title: x.title, desc: x.description, icon: x.icon_url, author: x.author, downloads: x.downloads, follows: x.follows, updated: x.date_modified, tags, url: `https://modrinth.com/${x.project_type}/${x.slug}` };
+      const cs = (x.display_categories || x.categories || []).filter(c => !LD.includes(c)).slice(0, 3).map(c => ({ t: c.replace(/-/g, ' '), k: 'cat' }));
+      const ld = (x.categories || []).filter(c => LD.includes(c)).map(c => ({ t: c, k: 'loader' }));
+      return { id: x.project_id, title: x.title, desc: x.description, icon: x.icon_url, author: x.author, downloads: x.downloads, follows: x.follows, updated: x.date_modified, tags: [...ld, ...cs], url: `https://modrinth.com/${x.project_type}/${x.slug}` };
     }) };
   }
   if (!S.cfKey) throw new Error('Add your CurseForge API key in Settings (free at console.curseforge.com)');
   const sf = { relevance: 2, downloads: 6, follows: 2, newest: 11, updated: 3 }[sort] || 2;
   const p = new URLSearchParams({ gameId: 432, classId: { mod: 6, resourcepack: 12, modpack: 4471, shader: 6552 }[type], searchFilter: q || '', pageSize: per, index: off, sortField: sf, sortOrder: 'desc' });
-  if (i && compat && type !== 'modpack') p.set('gameVersion', i.mc);
-  if (i && compat && type === 'mod' && LT[i.loader]) p.set('modLoaderType', LT[i.loader]);
+  if (versions[0]) p.set('gameVersion', versions[0]); if (loaders[0] && LT[loaders[0]] && type === 'mod') p.set('modLoaderType', LT[loaders[0]]);
   const r = await CF('/mods/search?' + p);
   return { total: Math.min(r.pagination.totalCount, 10000), hits: r.data.map(x => ({ id: x.id, title: x.name, desc: x.summary, icon: x.logo?.thumbnailUrl, author: x.authors?.[0]?.name, downloads: x.downloadCount, follows: null, updated: x.dateModified, tags: (x.categories || []).slice(0, 4).map(c => ({ t: c.name, k: 'cat' })), url: x.links?.websiteUrl })) };
 });
-h('install', async ({ src, type, pid, id }) => {
-  if (type === 'modpack') return [(await (src === 'modrinth' ? packFromMr : packFromCf)(pid)).name];
+h('install', async ({ src, type, pid, id, icon }) => {
+  IM.t = 0;
+  if (type === 'modpack') {
+    const i = await (src === 'modrinth' ? packFromMr : packFromCf)(pid);
+    if (icon) { try { saveImg(i, 'icon', await dl(icon, path.join(os.tmpdir(), 'jern-icon-' + i.id))); } catch {} }
+    return [i.name];
+  }
   const i = getI(id);
   if (src === 'modrinth') { const have = await installedPids(i, type).catch(() => new Set()); if (have.has(pid)) throw new Error('Already installed in this instance'); return mrInstall(i, pid, type, new Set(type === 'mod' ? have : [])); }
   return cfInstall(i, pid, type);
+});
+
+// ---------- worlds ----------
+function nbt(buf) {
+  let p = 0;
+  const str = () => { const n = buf.readUInt16BE(p); p += 2; const s = buf.toString('utf8', p, p + n); p += n; return s; };
+  const val = t => {
+    switch (t) {
+      case 1: return buf.readInt8(p++);
+      case 2: { const v = buf.readInt16BE(p); p += 2; return v; }
+      case 3: { const v = buf.readInt32BE(p); p += 4; return v; }
+      case 4: { const v = buf.readBigInt64BE(p); p += 8; return Number(v); }
+      case 5: { const v = buf.readFloatBE(p); p += 4; return v; }
+      case 6: { const v = buf.readDoubleBE(p); p += 8; return v; }
+      case 7: { const n = buf.readInt32BE(p); p += 4 + n; return null; }
+      case 8: return str();
+      case 9: { const it = buf.readInt8(p++), n = buf.readInt32BE(p); p += 4; const a = []; for (let k = 0; k < n; k++) a.push(val(it)); return a; }
+      case 10: { const o = {}; for (;;) { const tt = buf.readInt8(p++); if (tt === 0) break; const k = str(); o[k] = val(tt); } return o; }
+      case 11: { const n = buf.readInt32BE(p); p += 4 + n * 4; return null; }
+      case 12: { const n = buf.readInt32BE(p); p += 4 + n * 8; return null; }
+      default: throw new Error('bad nbt tag ' + t);
+    }
+  };
+  const t = buf.readInt8(p++); str(); return val(t);
+}
+function worldInfo(i, dir) {
+  const base = path.join(idir(i), 'saves', dir), f = path.join(base, 'level.dat'); if (!fs.existsSync(f)) return null;
+  let d = {}; try { d = nbt(zlib.gunzipSync(fs.readFileSync(f))).Data || {}; } catch {}
+  const ip = path.join(base, 'icon.png');
+  return { dir, name: d.LevelName || dir, mode: ['Survival', 'Creative', 'Adventure', 'Spectator'][d.GameType] || 'Survival', hardcore: !!d.hardcore, diff: ['Peaceful', 'Easy', 'Normal', 'Hard'][d.Difficulty] || null, played: d.LastPlayed || fs.statSync(f).mtimeMs, version: d.Version?.Name || null, icon: fs.existsSync(ip) ? 'data:image/png;base64,' + fs.readFileSync(ip).toString('base64') : null };
+}
+h('worlds:list', ({ id }) => { const i = getI(id), d = path.join(idir(i), 'saves'); if (!fs.existsSync(d)) return []; return fs.readdirSync(d).map(n => worldInfo(i, n)).filter(Boolean).sort((a, b) => b.played - a.played); });
+h('worlds:open', ({ id, dir }) => shell.openPath(inside(getI(id), path.join('saves', dir))));
+h('worlds:delete', ({ id, dir }) => { fs.rmSync(inside(getI(id), path.join('saves', dir)), { recursive: true, force: true }); return true; });
+h('worlds:backup', ({ id, dir }) => {
+  const i = getI(id), src = inside(i, path.join('saves', dir)), z = new AdmZip(); z.addLocalFolder(src, dir);
+  const out = inside(i, path.join('backups', `${dir}-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`)); fs.mkdirSync(path.dirname(out), { recursive: true }); z.writeZip(out); return out;
+});
+h('worlds:import', ({ id, file }) => {
+  const i = getI(id), z = new AdmZip(file), es = z.getEntries().filter(e => !e.isDirectory), flat = es.some(e => e.entryName === 'level.dat');
+  const lv = es.find(e => /(^|\/)level\.dat$/.test(e.entryName)); if (!lv) throw new Error('No level.dat found - is this a Minecraft world?');
+  const root = flat ? '' : lv.entryName.replace(/level\.dat$/, ''), name = flat ? path.basename(file, path.extname(file)) : (root.split('/').filter(Boolean).pop() || path.basename(file, path.extname(file)));
+  let dest = name, n = 1; while (fs.existsSync(inside(i, path.join('saves', dest)))) dest = `${name} (${++n})`;
+  for (const e of es) if (e.entryName.startsWith(root)) { const t = inside(i, path.join('saves', dest, e.entryName.slice(root.length))); fs.mkdirSync(path.dirname(t), { recursive: true }); fs.writeFileSync(t, e.getData()); }
+  return dest;
+});
+
+// ---------- skins & capes (Microsoft accounts) ----------
+const MCS = 'https://api.minecraftservices.com';
+const SK = path.join(app.getPath('userData'), 'skins');
+const SKJ = path.join(SK, 'skins.json');
+const loadSk = () => { try { return JSON.parse(fs.readFileSync(SKJ, 'utf8')); } catch { return []; } };
+const saveSk = l => wr(SKJ, l);
+const pngSize = b => (b.length > 24 && b.readUInt32BE(0) === 0x89504e47) ? [b.readUInt32BE(16), b.readUInt32BE(20)] : null;
+function addSkin(buf, name, variant, srcUrl) {
+  const sz = pngSize(buf); if (!sz || sz[0] !== 64 || ![32, 64].includes(sz[1])) throw new Error('A skin must be a 64x64 (or 64x32) PNG');
+  const l = loadSk(), id = crypto.randomUUID().slice(0, 8); fs.mkdirSync(SK, { recursive: true }); fs.writeFileSync(path.join(SK, id + '.png'), buf);
+  l.unshift({ id, name, variant: variant || 'classic', src: srcUrl || null }); saveSk(l); return id;
+}
+const rawGet = async u => { const r = await fetch(u, { headers: UA }); if (!r.ok) throw new Error(`${r.status} ${u}`); return Buffer.from(await r.arrayBuffer()); };
+async function msAuth(accId) { const a = A.list.find(x => x.id === accId); if (!a || a.type !== 'ms') throw new Error('Skins and capes can only be changed on Microsoft accounts'); return { Authorization: 'Bearer ' + (await resolveAuth(a)).access_token, ...UA }; }
+h('skin:profile', async accId => {
+  const r = await fetch(MCS + '/minecraft/profile', { headers: await msAuth(accId) }); if (!r.ok) throw new Error('Could not load profile (' + r.status + ')');
+  const p = await r.json(), cur = (p.skins || []).find(s => s.state === 'ACTIVE');
+  if (cur && !loadSk().some(s => s.src === cur.url)) { try { addSkin(await rawGet(cur.url), 'Current skin', (cur.variant || 'classic').toLowerCase(), cur.url); } catch {} }
+  return { skin: cur ? { url: cur.url, variant: (cur.variant || 'classic').toLowerCase() } : null, capes: (p.capes || []).map(c => ({ id: c.id, alias: c.alias, url: c.url, active: c.state === 'ACTIVE' })) };
+});
+h('skin:lib', () => loadSk().map(s => { let data = null; try { data = 'data:image/png;base64,' + fs.readFileSync(path.join(SK, s.id + '.png')).toString('base64'); } catch {} return { ...s, data }; }).filter(s => s.data));
+h('skin:add', async ({ q, file }) => {
+  if (file) return addSkin(fs.readFileSync(file), path.basename(file, path.extname(file)), 'classic');
+  q = (q || '').trim(); if (!q) throw new Error('Type a player name, UUID or texture link');
+  const um = q.match(/namemc\.com\/(?:profile\/)?([\w.-]+)/i); if (um) q = um[1];
+  if (/^https:\/\/textures\.minecraft\.net\//.test(q)) return addSkin(await rawGet(q), 'Texture', 'classic', q);
+  let uuid = q.replace(/-/g, '');
+  if (!/^[0-9a-f]{32}$/i.test(uuid)) { const u = await J('https://api.mojang.com/users/profiles/minecraft/' + encodeURIComponent(q)).catch(() => null); if (!u) throw new Error('Player not found'); uuid = u.id; q = u.name; }
+  const prof = await J('https://sessionserver.mojang.com/session/minecraft/profile/' + uuid), tex = JSON.parse(Buffer.from(prof.properties.find(x => x.name === 'textures').value, 'base64').toString()).textures.SKIN;
+  if (!tex) throw new Error('That player has no custom skin');
+  return addSkin(await rawGet(tex.url), prof.name || q, tex.metadata?.model === 'slim' ? 'slim' : 'classic', tex.url);
+});
+h('skin:remove', id => { saveSk(loadSk().filter(s => s.id !== id)); fs.rmSync(path.join(SK, id + '.png'), { force: true }); return true; });
+h('skin:apply', async ({ acc, id, variant }) => {
+  const s = loadSk().find(x => x.id === id); if (!s) throw new Error('Skin not found');
+  const fd = new FormData(); fd.append('variant', variant || s.variant || 'classic'); fd.append('file', new Blob([fs.readFileSync(path.join(SK, id + '.png'))], { type: 'image/png' }), 'skin.png');
+  const r = await fetch(MCS + '/minecraft/profile/skins', { method: 'POST', headers: await msAuth(acc), body: fd }); if (!r.ok) throw new Error('Minecraft rejected the skin (' + r.status + ')'); return true;
+});
+h('skin:reset', async acc => { const r = await fetch(MCS + '/minecraft/profile/skins/active', { method: 'DELETE', headers: await msAuth(acc) }); if (!r.ok) throw new Error('Reset failed (' + r.status + ')'); return true; });
+h('skin:cape', async ({ acc, capeId }) => {
+  const hd = await msAuth(acc), r = capeId ? await fetch(MCS + '/minecraft/profile/capes/active', { method: 'PUT', headers: { ...hd, 'Content-Type': 'application/json' }, body: JSON.stringify({ capeId }) }) : await fetch(MCS + '/minecraft/profile/capes/active', { method: 'DELETE', headers: hd });
+  if (!r.ok) throw new Error('Cape change failed (' + r.status + ')'); return true;
 });
 
 const JVM = ['-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=100', '-XX:+UnlockExperimentalVMOptions', '-XX:+DisableExplicitGC', '-XX:G1NewSizePercent=30', '-XX:G1MaxNewSizePercent=40', '-XX:G1HeapRegionSize=8M', '-XX:G1ReservePercent=20', '-XX:InitiatingHeapOccupancyPercent=15', '-XX:+PerfDisableSharedMem'];
@@ -329,10 +541,12 @@ h('inst:launch', async id => {
   if (!acc) throw new Error('Add an account first (bottom-left)');
   send('state', { id, s: 'launching' });
   try {
-    const auth = await resolveAuth(acc), javaPath = await ensureJava(i.mc), custom = await ensureLoader(i);
+    const auth = await resolveAuth(acc), javaPath = await ensureJava(i.mc);
+    let custom, loaderArgs = [];
+    if (i.loader === 'forge' || i.loader === 'neoforge') { const r = await ensureForgeLike(i); custom = r.id; loaderArgs = r.jvm; } else custom = await ensureLoader(i);
     if (i.perf && i.loader === 'fabric') await ensurePerfMods(i);
     if (i.autoUpdate) { log('Checking for mod and pack updates…'); try { const r = await updateAllFor(i); log(r.done.length ? `Updated ${r.done.length} item(s)` : 'Everything is up to date'); } catch (e) { log('Auto-update skipped: ' + e.message); } }
-    const args = [...(i.perf ? JVM : [])];
+    const args = [...(i.perf ? JVM : []), ...loaderArgs];
     if (acc.type === 'ely') args.push(`-javaagent:${await ensureAuthlib()}=${ELY}/api/authlib-injector`);
     const L = new Client();
     // "after launch" behaviour: wait until the game window is coming up (or 20 s), then minimise / close the launcher
@@ -349,7 +563,7 @@ h('inst:launch', async id => {
       if (minimized && S.restoreOnExit !== false && win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
       minimized = false;
     });
-    const p = await L.launch({ authorization: auth, root: S.gameDir, javaPath, overrides: { gameDirectory: idir(i) }, version: { number: i.mc, type: 'release', custom }, memory: { max: (i.ram || S.ramMax) + 'M', min: '1024M' }, customArgs: args, detached: true });
+    const p = await L.launch({ authorization: auth, root: S.gameDir, javaPath, overrides: { gameDirectory: idir(i), detached: true }, version: { number: i.mc, type: 'release', custom }, memory: { max: (i.ram || S.ramMax) + 'M', min: '1024M' }, customArgs: args });
     if (!p) throw new Error('Launch failed - see the Log tab');
     { const l = loadI(), x = l.find(y => y.id === id); if (x) { x.lastPlayed = Date.now(); saveI(l); } }
     send('state', { id, s: 'running' }); setTimeout(after, 20000); return true;
@@ -358,7 +572,7 @@ h('inst:launch', async id => {
 
 app.whenReady().then(() => {
   const ico = path.join(__dirname, 'build', 'icon.ico');
-  win = new BrowserWindow({ width: 1100, height: 720, minWidth: 900, minHeight: 600, backgroundColor: '#1d2026', title: 'Jern Client', titleBarStyle: 'hidden', titleBarOverlay: { color: '#171a1f', symbolColor: '#ffffff', height: 40 }, icon: fs.existsSync(ico) ? ico : undefined, webPreferences: { preload: path.join(__dirname, 'preload.js') } });
+  win = new BrowserWindow({ width: 1280, height: 800, minWidth: 980, minHeight: 620, backgroundColor: '#000000', title: 'Jern Client', titleBarStyle: 'hidden', titleBarOverlay: { color: '#000000', symbolColor: '#ffffff', height: 36 }, icon: fs.existsSync(ico) ? ico : undefined, webPreferences: { preload: path.join(__dirname, 'preload.js') } });
   win.removeMenu(); win.loadFile('renderer/index.html');
   win.webContents.on('before-input-event', (e, i) => { if (i.type === 'keyDown' && (i.key === 'F12' || (i.control && i.shift && i.key.toLowerCase() === 'i'))) win.webContents.toggleDevTools(); });
 });
