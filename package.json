@@ -1,7 +1,7 @@
 {
   "name": "jern-client",
   "productName": "Jern Client",
-  "version": "1.3.1",
+  "version": "1.3.0",
   "description": "Performance-focused Minecraft launcher",
   "main": "main.js",
   "author": "Jern",
