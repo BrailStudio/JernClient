@@ -35,8 +35,9 @@ const h = (c, f) => ipcMain.handle(c, async (_, a) => { try { return { ok: true,
 
 // ---------- http helpers ----------
 const UA = { 'User-Agent': 'JernClient/1.1' };
-const J = async (u, hd = {}) => { const r = await fetch(u, { headers: { ...UA, ...hd } }); if (!r.ok) throw new Error(`${r.status} ${u}`); return r.json(); };
-const dl = async (u, dest) => { const r = await fetch(u, { headers: UA }); if (!r.ok) throw new Error(`${r.status} ${u}`); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer())); return dest; };
+const netErr = (e, u) => new Error(`Network error (${e.cause?.code || e.name || e.message}) reaching ${new URL(u).host}`);
+const J = async (u, hd = {}) => { let r; try { r = await fetch(u, { headers: { ...UA, ...hd }, signal: AbortSignal.timeout(20000) }); } catch (e) { throw netErr(e, u); } if (!r.ok) throw new Error(`${r.status} ${u}`); return r.json(); };
+const dl = async (u, dest) => { let r; try { r = await fetch(u, { headers: UA, signal: AbortSignal.timeout(600000) }); } catch (e) { throw netErr(e, u); } if (!r.ok) throw new Error(`${r.status} ${u}`); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer())); return dest; };
 const CF = p => J('https://api.curseforge.com/v1' + p, { 'x-api-key': S.cfKey });
 const DIR = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks', schematic: 'schematics' };
 const LT = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 };
@@ -275,7 +276,15 @@ h('cfg:set', p => {
   S = { ...S, ...p }; saveS(); writeDD(S.gameDir); return S;
 });
 h('pick-dir', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] }); return r.canceled ? null : r.filePaths[0]; });
-h('versions', async () => { const m = await J('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'); return { latest: m.latest, versions: m.versions.map(v => ({ id: v.id, type: v.type })) }; });
+const VCACHE = path.join(app.getPath('userData'), 'versions-cache.json');
+h('versions', async () => {
+  let err;
+  for (const u of ['https://piston-meta.mojang.com/mc/game/version_manifest_v2.json', 'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json']) {
+    try { const man = await J(u), out = { latest: man.latest, versions: man.versions.map(v => ({ id: v.id, type: v.type })) }; try { wr(VCACHE, out); } catch {} return out; } catch (e) { err = e; }
+  }
+  try { const c = JSON.parse(fs.readFileSync(VCACHE, 'utf8')); if (c.versions?.length) return { ...c, offline: true }; } catch {}
+  throw new Error('Could not load the Minecraft version list. ' + (err?.message || '') + '. Check your internet connection, firewall or proxy.');
+});
 h('versions:installed', () => { const d = path.join(S.gameDir, 'versions'); return fs.existsSync(d) ? fs.readdirSync(d) : []; });
 h('versions:remove', n => { const d = path.resolve(S.gameDir, 'versions'), f = path.resolve(d, n); if (!f.startsWith(d + path.sep)) throw new Error('Blocked'); fs.rmSync(f, { recursive: true, force: true }); return true; });
 

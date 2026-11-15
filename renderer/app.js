@@ -145,12 +145,19 @@ function pageInst(){const grid=E('div',{class:iview==='grid'?'igrid':'ilist'});
   IB('import','Import modpack (.mrpack / CurseForge zip)',importPack),Bt('New instance',{cls:'pri',icon:'plus',onclick:createModal})),grid));fill()}
 async function importPack(){try{const f=await c('pick-file',{title:'Import modpack',filters:[{name:'Modpack',extensions:['mrpack','zip']}]});if(!f)return;const i=await task('Import modpack',()=>c('inst:import',{file:f}));await refreshInst();drawRail();toast('Created '+i.name);navigate({view:'inst'})}catch(e){toast(e.message,'err')}}
 function createModal(){
- const name=E('input',{placeholder:'My instance'}),ver=E('select'),sn=E('input',{type:'checkbox'}),ld=sel([['vanilla','Vanilla'],['fabric','Fabric'],['quilt','Quilt'],['neoforge','NeoForge'],['forge','Forge (1.13+)']],'vanilla',()=>{}),err=E('p',{class:'msg e'});
+ const name=E('input',{placeholder:'My instance'}),ver=E('select'),sn=E('input',{type:'checkbox'}),ld=sel([['vanilla','Vanilla'],['fabric','Fabric'],['quilt','Quilt'],['neoforge','NeoForge'],['forge','Forge (1.13+)']],'vanilla',()=>{}),err=E('p',{class:'msg e'}),stat=E('p',{class:'msg',style:'margin:6px 0 0'});
  const perf=toggle(false,v=>{if(v&&ld.value==='vanilla')ld.value='fabric'});
- const fill=()=>{ver.replaceChildren(...V.versions.filter(v=>sn.checked||v.type==='release').map(v=>E('option',{value:v.id,text:v.id})));ver.value=V.latest.release};fill();sn.onchange=fill;
- modal(E('h2',{text:'New instance'}),E('label',{class:'f',text:'Name'}),name,E('label',{class:'f',text:'Minecraft version'}),ver,E('label',{class:'ck',style:'margin-top:8px'},sn,'Show snapshots and old versions'),
+ const create=Bt('Create',{cls:'pri',disabled:true,onclick:async()=>{try{await c('inst:create',{name:name.value,mc:ver.value,loader:ld.value,perf:perf.classList.contains('on')});await refreshInst();drawRail();close();toast('Instance created');navigate({view:'inst'})}catch(e){err.textContent=e.message}}});
+ const fill=()=>{const l=(V.versions||[]).filter(v=>sn.checked||v.type==='release');
+  ver.replaceChildren(...(l.length?l.map(v=>E('option',{value:v.id,text:v.id})):[E('option',{value:'',text:'No versions loaded'})]));
+  if(V.latest?.release&&l.some(v=>v.id===V.latest.release))ver.value=V.latest.release;create.disabled=!l.length};
+ const load=async()=>{stat.className='msg';stat.textContent='Loading versions…';
+  try{V=await c('versions');stat.textContent=V.offline?'Offline - showing the last saved version list.':'';fill()}
+  catch(e){stat.className='msg e';stat.replaceChildren(E('span',{text:e.message+' '}),Bt('Retry',{cls:'sm',onclick:load}));fill()}};
+ fill();sn.onchange=fill;if(!(V.versions||[]).length||V.offline)load();
+ modal(E('h2',{text:'New instance'}),E('label',{class:'f',text:'Name'}),name,E('label',{class:'f',text:'Minecraft version'}),ver,stat,E('label',{class:'ck',style:'margin-top:8px'},sn,'Show snapshots and old versions'),
   E('label',{class:'f',text:'Mod loader'}),ld,E('div',{class:'set-opt'},perf,E('div',{},E('b',{text:'Boost'}),E('div',{class:'sub',text:'Tuned Java flags, plus FPS mods on Fabric'}))),
-  E('div',{style:'height:14px'}),err,E('div',{class:'row'},Bt('Create',{cls:'pri',onclick:async()=>{try{await c('inst:create',{name:name.value,mc:ver.value,loader:ld.value,perf:perf.classList.contains('on')});await refreshInst();drawRail();close();toast('Instance created');navigate({view:'inst'})}catch(e){err.textContent=e.message}}}),Bt('Cancel',{onclick:close})));setTimeout(()=>name.focus(),50)}
+  E('div',{style:'height:14px'}),err,E('div',{class:'row'},create,Bt('Cancel',{onclick:close})));setTimeout(()=>name.focus(),50)}
 function editModal(i){
  let useDef=!i.ram;const name=E('input',{value:i.name}),perf=toggle(i.perf),au=toggle(i.autoUpdate),ram=E('input',{type:'range',min:1024,max:16384,step:512,value:i.ram||CFG.ramMax||4096,style:'width:100%;padding:0;height:20px;accent-color:var(--acc)'}),rv=E('b');
  const lab=()=>rv.textContent=useDef?'Default ('+(CFG.ramMax||4096)+' MB)':ram.value+' MB';lab();ram.oninput=()=>{useDef=false;lab()};
